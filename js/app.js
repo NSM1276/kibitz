@@ -42,26 +42,68 @@ let progress = load('progress') || {};
 const isDone = (g, id) => !!(progress[g] && progress[g][id]);
 function markDone(g, id) { (progress[g] ||= {})[id] = 1; save('progress', progress); }
 
-// ---------- sound (tiny WebAudio synth, no files) ----------
+// ---------- sound: real recorded foley (Kenney, CC0) with a tiny synth fallback ----------
 let ac = null;
+const actx = () => { ac ||= new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume().catch(() => {}); return ac; };
 function tone(f, d, type = 'sine', v = 0.12, when = 0) {
   try {
-    ac ||= new (window.AudioContext || window.webkitAudioContext)();
-    const o = ac.createOscillator(), g = ac.createGain(), t0 = ac.currentTime + when;
+    const c = actx(), o = c.createOscillator(), g = c.createGain(), t0 = c.currentTime + when;
     o.type = type; o.frequency.setValueAtTime(f, t0);
     g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
-    o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0 + d + 0.02);
+    o.connect(g).connect(c.destination); o.start(t0); o.stop(t0 + d + 0.02);
   } catch { /* no audio */ }
 }
+const range = (p, a, b) => Array.from({ length: b - a + 1 }, (_, i) => p + (a + i));
+const SOUNDS = {
+  wood: range('wood', 0, 4), woodm: range('woodm', 0, 2), woodh: range('woodh', 0, 2), rail: range('rail', 0, 2), pocket: range('pocket', 0, 2),
+  cue: range('cue', 0, 2), ball: range('ball', 1, 4), checker: range('checker', 1, 3), dice: range('dice', 1, 3), slide: range('slide', 1, 3),
+  card: range('card', 1, 4), shuffle: ['shuffle'], fan: ['fan'], chips: ['chips'], shake: ['shake'], ding: ['ding'],
+};
+const buf = {};
+let muted = load('mute') || false;
+(function preload() {
+  try {
+    const c = actx();
+    for (const n of Object.values(SOUNDS).flat())
+      fetch(`assets/sfx/${n}.mp3`).then((r) => r.arrayBuffer()).then((a) => new Promise((ok, no) => c.decodeAudioData(a, ok, no))).then((b) => { buf[n] = b; }).catch(() => {});
+  } catch { /* no audio */ }
+})();
+['pointerdown', 'keydown'].forEach((ev) => window.addEventListener(ev, () => { try { actx(); } catch {} }, { passive: true }));
+// play one random take of a sound group; small pitch drift so repeats never sound copy-pasted
+function play(group, vol = 0.7, rate = 1, when = 0) {
+  if (muted) return true;
+  const takes = (SOUNDS[group] || []).filter((n) => buf[n]);
+  if (!takes.length) return false;
+  try {
+    const c = actx(), src = c.createBufferSource(), g = c.createGain();
+    src.buffer = buf[takes[Math.floor(Math.random() * takes.length)]];
+    src.playbackRate.value = rate * (0.96 + Math.random() * 0.08);
+    g.gain.value = Math.max(0, Math.min(1.2, vol));
+    src.connect(g).connect(c.destination); src.start(c.currentTime + when);
+  } catch { /* ignore */ }
+  return true;
+}
 const sfx = {
-  tap: () => tone(660, 0.05, 'triangle', 0.06),
-  move: () => { tone(180, 0.06, 'square', 0.05); tone(120, 0.08, 'sine', 0.12); },
-  capture: () => { tone(140, 0.12, 'square', 0.07); tone(90, 0.16, 'sine', 0.16); },
-  ok: () => { tone(660, 0.12, 'triangle', 0.1); tone(990, 0.22, 'triangle', 0.1, 0.1); },
-  bad: () => { tone(200, 0.18, 'sawtooth', 0.06); tone(150, 0.25, 'sawtooth', 0.05, 0.12); },
-  win: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.25, 'triangle', 0.09, i * 0.09)),
-  hit: () => { tone(900, 0.03, 'square', 0.08); tone(300, 0.07, 'sine', 0.1); },
-  drop: () => { tone(220, 0.15, 'sine', 0.14); tone(110, 0.2, 'sine', 0.1, 0.05); },
+  tap: () => play('wood', 0.22, 1.6) || tone(660, 0.05, 'triangle', 0.05),
+  move: () => play('wood', 0.8) || tone(120, 0.08, 'sine', 0.12),
+  capture: () => { if (!play('woodm', 0.9)) tone(90, 0.16, 'sine', 0.16); play('woodh', 0.45, 1, 0.05); },
+  ok: () => play('ding', 0.45) || tone(990, 0.2, 'triangle', 0.1),
+  bad: () => { if (!play('woodh', 0.6, 0.8)) tone(150, 0.25, 'sawtooth', 0.05); play('woodh', 0.45, 0.7, 0.13); },
+  win: () => { play('ding', 0.5); play('chips', 0.6, 1, 0.12); },
+  // pool: strength 0..1
+  cue: (p = 0.6) => play('cue', 0.25 + p * 0.75, 0.9 + p * 0.2),
+  ball: (v = 300) => play('ball', Math.min(1, 0.12 + v / 900), 0.72 + Math.min(0.15, v / 6000)),
+  rail: (v = 300) => play('rail', Math.min(0.9, 0.1 + v / 1000)),
+  pocket: () => { play('pocket', 0.75, 0.9); play('wood', 0.25, 0.7, 0.09); },
+  hit: () => play('ball', 0.6, 0.75), drop: () => play('pocket', 0.75, 0.9),
+  // backgammon, cards
+  checker: () => play('checker', 0.75, 0.8) || play('wood', 0.8),
+  dice: () => play('dice', 0.85),
+  shake: () => play('shake', 0.6),
+  card: () => play('card', 0.7),
+  slide: () => play('slide', 0.6),
+  shuffle: () => play('shuffle', 0.55),
+  setMuted: (m) => { muted = m; save('mute', m); }, isMuted: () => muted,
 };
 
 // ---------- helpers ----------
@@ -78,7 +120,8 @@ function toast(msg, ms = 1800) {
   const el = h('div', { class: 'toast' }, msg); document.body.append(el);
   setTimeout(() => el.remove(), ms);
 }
-const langBtn = () => h('button', { class: 'lang', onclick: () => { lang = lang === 'en' ? 'de' : 'en'; save('lang', lang); route(); } }, lang === 'en' ? 'DE' : 'EN');
+const soundBtn = () => h('button', { class: 'lang snd', title: 'Sound', onclick: (e) => { sfx.setMuted(!sfx.isMuted()); e.currentTarget.textContent = sfx.isMuted() ? '🔇' : '🔊'; sfx.tap(); } }, sfx.isMuted() ? '🔇' : '🔊');
+const langBtn = () => [soundBtn(), h('button', { class: 'lang', onclick: () => { lang = lang === 'en' ? 'de' : 'en'; save('lang', lang); route(); } }, lang === 'en' ? 'DE' : 'EN')];
 
 // ---------- routing via hash: #/ , #/g/chess , #/g/chess/3 ----------
 let cleanup = null;
@@ -133,6 +176,7 @@ function creditsScreen() {
     h('div', { class: 'prompt' }, h('div', { class: 'pt', style: 'font-weight:500;font-size:14px' },
       'Chess pieces: "cburnett" set by Colin M.L. Burnett, CC BY-SA 3.0. ',
       'Chess rules: chess.js by Jeff Hlywa, BSD-2-Clause. ',
+      'Sounds: Casino Audio, Impact Sounds, Interface Sounds by Kenney (kenney.nl), CC0. ',
       'Everything else: original.')),
   );
 }

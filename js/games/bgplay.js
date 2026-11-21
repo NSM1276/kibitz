@@ -237,7 +237,7 @@ export function playBackgammon(stage, ctx) {
       const k = Math.min(1, (tm - t0) / T), e = 1 - Math.pow(1 - k, 3);
       anim.x = x0 + (x1 - x0) * e; anim.y = y0 + (y1 - y0) * e - Math.sin(k * Math.PI) * 30;
       draw();
-      if (k < 1) frame(stepF); else { anim = null; ctx.sfx.move(); draw(); cb && cb(); }
+      if (k < 1) frame(stepF); else { anim = null; to === 0 ? ctx.sfx.move() : ctx.sfx.checker(); draw(); cb && cb(); }
     };
     frame(stepF);
   }
@@ -254,13 +254,13 @@ export function playBackgammon(stage, ctx) {
   // ---------- my turn ----------
   function roll() {
     if (busy || turn !== 'me' || dice.length) return;
-    busy = true; syncButtons(); ctx.sfx.tap();
+    busy = true; syncButtons(); ctx.sfx.dice();
     tumble(myDiceX, () => {
       busy = false;
       dice = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
       used = []; done = []; history = [];
       seqs = sequences(s, dice);
-      ctx.sfx.tap(); draw();
+      draw();
       if (!seqs.length || !seqs[0].length) { say(MSG.none); busy = true; syncButtons(); later(() => { busy = false; endMyTurn(); }, 1400); return; }
       // a single possible source? pre-select it (bar entry, mostly)
       say(s.bar[0] ? MSG.bar : MSG.pick);
@@ -316,9 +316,10 @@ export function playBackgammon(stage, ctx) {
   const toMine = (p) => (p === 25 || p === 0 ? p : 25 - p);
   function cpuTurn() {
     busy = true; syncButtons(); say(MSG.cpu);
+    ctx.sfx.dice();
     tumble(cpuDiceX, () => {
       cpuDice = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
-      ctx.sfx.tap(); draw();
+      draw();
       const play = bestPlay(flip(s), cpuDice, ctx.level);
       const stepsList = play ? play.steps.slice() : [];
       let fv = flip(s);

@@ -325,15 +325,15 @@ export function playPool(stage, ctx) {
     phase = 'anim'; renderInfo();
     const res = simulate(balls, shot, true);
     const ids = balls.map((b) => b.n);
-    ctx.sfx.tap();
-    const t0 = performance.now(); let evI = 0;
+    ctx.sfx.cue(Math.min(1, (shot.speed - 120) / 1500));
+    const t0 = performance.now(); let evI = 0; let lastRail = 0;
     const evs = res.events.slice().sort((a, b) => a.t - b.t);
     const stepF = (tm) => {
       if (!alive) return;
       const t = (tm - t0) / 1000, fi = Math.min(res.frames.length - 1, Math.floor(t * 60));
       while (evI < evs.length && evs[evI].t <= t) {
         const e = evs[evI++];
-        if (e.type === 'hit' && e.v > 30) ctx.sfx.hit(); else if (e.type === 'pot') ctx.sfx.drop();
+        if (e.type === 'hit' && e.v > 25) ctx.sfx.ball(e.v); else if (e.type === 'pot') ctx.sfx.pocket(); else if (e.type === 'rail' && e.v > 60 && e.t - lastRail > 0.05) { lastRail = e.t; ctx.sfx.rail(e.v); }
       }
       draw(res.frames[fi].map((p, i) => (p ? { x: p[0], y: p[1], n: ids[i] } : null)));
       if (fi < res.frames.length - 1) frame(stepF); else later(() => afterShot(res), 150);

@@ -44,6 +44,7 @@ export default {
     const sortHand = (h) => h.sort((a, b) => (a[0] === T) - (b[0] === T) || SUITS.indexOf(a[0]) - SUITS.indexOf(b[0]) || rv(a) - rv(b));
     function draw(who) { while (hands[who].length < 6 && talon.length) hands[who].push(talon.pop()); }
     draw('me'); draw('cpu');
+    setTimeout(() => ctx.sfx.shuffle(), 150);
     // lowest trump starts
     const lowT = (h) => Math.min(...h.filter((c) => c[0] === T).map(rv), 99);
     attacker = lowT(hands.cpu) < lowT(hands.me) ? 'cpu' : 'me';
@@ -106,7 +107,7 @@ export default {
       if (attacker === 'me') {
         if (table.length && !rankOnTable().has(c[1])) return ctx.toast(t(MSG.noRank));
         if (table.length && !(table.length < limit && unbeaten().length < hands.cpu.length)) return ctx.toast(t(MSG.full));
-        hands.me.splice(hands.me.indexOf(c), 1); table.push({ a: c, d: null }); ctx.sfx.tap();
+        hands.me.splice(hands.me.indexOf(c), 1); table.push({ a: c, d: null }); ctx.sfx.card();
         if (taking) { render(); ctx.hint(MSG.addMore); return; }
         render(); busy = true; render();
         later(cpuDefend, 650);
@@ -114,7 +115,7 @@ export default {
         if (taking) return;
         const target = unbeaten().find((p) => beats(p.a, c));
         if (!target) return ctx.toast(t(MSG.cant));
-        hands.me.splice(hands.me.indexOf(c), 1); target.d = c; ctx.sfx.move();
+        hands.me.splice(hands.me.indexOf(c), 1); target.d = c; ctx.sfx.card();
         busy = true; render();
         later(cpuAttack, 650);
       }
@@ -128,7 +129,7 @@ export default {
         // avoid burning a big trump early on a cheap card (easier levels give in more)
         if (pick && pick[0] === T && p.a[0] !== T && talon.length > 6 && rv(pick) >= 5 + ctx.level && rv(p.a) < 4) pick = null;
         if (!pick) { taking = true; ctx.hint(MSG.cpuTakes); busy = false; render(); return; }
-        hands.cpu.splice(hands.cpu.indexOf(pick), 1); p.d = pick; ctx.sfx.move();
+        hands.cpu.splice(hands.cpu.indexOf(pick), 1); p.d = pick; ctx.sfx.card();
       }
       busy = false; render(); ctx.hint(MSG.addMore);
     }
@@ -142,7 +143,7 @@ export default {
       if (table.length && ctx.level === 0) opts = opts.slice(0, 1);
       const c = room ? opts[0] : null;
       if (c && (table.length === 0 || val(c) < 8 || talon.length === 0)) {
-        hands.cpu.splice(hands.cpu.indexOf(c), 1); table.push({ a: c, d: null }); ctx.sfx.tap();
+        hands.cpu.splice(hands.cpu.indexOf(c), 1); table.push({ a: c, d: null }); ctx.sfx.card();
         busy = false;
         if (taking) { render(); later(cpuAttack, 450); return; }
         ctx.hint(MSG.defend); render(); return;
@@ -159,6 +160,7 @@ export default {
       } else { ctx.hint(MSG.beaten); }
       const tookIt = taking;
       table = []; taking = false;
+      ctx.sfx.slide(); setTimeout(() => ctx.sfx.slide(), 220);
       draw(attacker); draw(def);
       if (!tookIt) attacker = def;
       render();

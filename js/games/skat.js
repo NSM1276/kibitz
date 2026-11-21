@@ -42,7 +42,7 @@ export default {
       const el = cardEl(x.card, 'div'); el.style.cssText = SLOT[x.who] + ';opacity:0;transform:scale(.8);transition:all .3s';
       const who = document.createElement('div'); who.className = 'who'; who.textContent = ROLE[L][x.role]; el.append(who);
       trickEl.append(el);
-      setTimeout(() => { el.style.opacity = '1'; el.style.transform = 'none'; ctx.sfx.tap(); }, 250 + i * 380);
+      setTimeout(() => { el.style.opacity = '1'; el.style.transform = 'none'; ctx.sfx.slide(); }, 250 + i * 380);
     });
 
     const legalCards = legal(task.hand, task.trick, g);
@@ -79,7 +79,7 @@ export default {
       fly.style.transform = `translate(${r0.left - fr.left}px, ${r0.top - fr.top}px)`;
       el.classList.add('played');
       requestAnimationFrame(() => requestAnimationFrame(() => { fly.style.transform = 'none'; }));
-      void tr; ctx.sfx.move(); ctx.hint('');
+      void tr; ctx.sfx.card(); ctx.hint('');
       setTimeout(() => {
         const ok = task.accept.includes(c);
         const why = !ok && task.why && task.why[c];

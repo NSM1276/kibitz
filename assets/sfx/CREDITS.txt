@@ -1,0 +1,2 @@
+Sound effects in assets/sfx: Kenney (www.kenney.nl) packs "Casino Audio", "Impact Sounds", "Interface Sounds".
+License: CC0 1.0 (public domain). Trimmed and converted to mono MP3.

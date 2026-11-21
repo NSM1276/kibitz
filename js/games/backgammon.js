@@ -105,7 +105,7 @@ export default {
         const k = Math.min(1, (tm - t0) / T), e = 1 - Math.pow(1 - k, 3);
         anim.x = x0 + (x1 - x0) * e; anim.y = y0 + (y1 - y0) * e - Math.sin(k * Math.PI) * 40;
         draw();
-        if (k < 1) frame(step); else { anim = null; ctx.sfx.move(); draw(); done && done(); }
+        if (k < 1) frame(step); else { anim = null; ctx.sfx.checker(); draw(); done && done(); }
       };
       frame(step);
     }

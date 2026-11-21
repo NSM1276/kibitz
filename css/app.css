@@ -248,3 +248,4 @@ canvas.gcv { display: block; border-radius: 12px; box-shadow: 0 14px 30px #000a;
 .ptop .pl .cki { width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 1px 2px #0008, inset 0 0 0 3px #0002; }
 .ptop .pl .cki.w { background: radial-gradient(circle at 35% 30%, #fff, #d8cfb8); }
 .ptop .pl .cki.r { background: radial-gradient(circle at 35% 30%, #d65a40, #6e1c10); }
+.lang.snd { font-size: 16px; padding: 0 6px; }

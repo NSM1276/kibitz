@@ -110,11 +110,11 @@ export default {
       if (!s.r.hit) cue = lerp(L.C, s.r.cueEnd, ease(t / T1));
       else if (t < T1) cue = lerp(L.C, s.r.G, t / T1);
       else {
-        if (!s.clacked) { s.clacked = true; ctx.sfx.hit(); }
+        if (!s.clacked) { s.clacked = true; ctx.sfx.ball(500); }
         const k = ease((t - T1) / T2);
         cue = lerp(s.r.G, s.r.cueEnd, ease((t - T1) / (T2 * 0.8)));
         ob = lerp(L.O, s.r.objEnd, k);
-        if (s.r.pocket && k > 0.97 && !sunk) { sunk = true; ctx.sfx.drop(); }
+        if (s.r.pocket && k > 0.97 && !sunk) { sunk = true; ctx.sfx.pocket(); }
       }
       if (showAnswer) { ring(L.G, '#e8c46a'); line(L.O, L.P, '#e8c46a88', 1.5, [2, 4]); }
       if (!(sunk && s.r.pocket)) ball(ob, BALL[task.ball], task.ball);
