@@ -74,7 +74,7 @@ export default {
       flipRender(root, build, {
         origin: () => talonEl.querySelector('.pile') || talonEl.querySelector('.trumpcard') || talonEl,
         discard: () => { const r = bitoEl.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
-        onBorn: (i) => { setTimeout(() => alive && ctx.sfx.slide(), i * 70); },
+        onBorn: (i) => { setTimeout(() => alive && ctx.sfx.deal(), i * 70); },
         order: (el) => { const box = el.parentElement, i = [...box.children].indexOf(el); return box === oppEl ? 2 * i : box === handEl ? 2 * i + 1 : 100 + i; },
       });
     }

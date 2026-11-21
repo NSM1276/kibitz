@@ -1,2 +1,4 @@
 Sound effects in assets/sfx: Kenney (www.kenney.nl) packs "Casino Audio", "Impact Sounds", "Interface Sounds".
 License: CC0 1.0 (public domain). Trimmed and converted to mono MP3.
+
+clack*, throw*, deal*: made by tools/gen_sfx.py (synthesized, ours). Card slap inside throw/deal from "Playing Card Sounds" by Brian MacIntosh (BMacZero), OpenGameArt, CC0.

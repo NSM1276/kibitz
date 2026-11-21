@@ -69,7 +69,7 @@ const range = (p, a, b) => Array.from({ length: b - a + 1 }, (_, i) => p + (a + 
 const SOUNDS = {
   wood: range('wood', 0, 4), woodm: range('woodm', 0, 2), woodh: range('woodh', 0, 2), rail: range('rail', 0, 2), pocket: range('pocket', 0, 2),
   cue: range('cue', 0, 2), ball: range('ball', 1, 4), checker: range('checker', 1, 3), dice: range('dice', 1, 3), die: range('die', 1, 4), slide: range('slide', 1, 3),
-  card: range('card', 1, 4), shuffle: ['shuffle'], fan: ['fan'], chips: ['chips'], shake: ['shake'], ding: ['ding'],
+  card: range('card', 1, 4), clack: range('clack', 1, 6), throw: range('throw', 1, 4), deal: range('deal', 1, 4), place: range('place', 1, 4), shuffle: ['shuffle'], fan: ['fan'], chips: ['chips'], shake: ['shake'], ding: ['ding'],
 };
 const buf = {};
 let muted = load('mute') || false;
@@ -80,6 +80,8 @@ let muted = load('mute') || false;
       fetch(`assets/sfx/${n}.mp3`).then((r) => r.arrayBuffer()).then((a) => new Promise((ok, no) => c.decodeAudioData(a, ok, no))).then((b) => { buf[n] = b; }).catch(() => {});
   } catch { /* no audio */ }
 })();
+// chess pieces load up front, so a board never shows up empty for a moment on a slow phone
+for (const c of 'wb') for (const t of 'KQRBNP') { const im = new Image(); im.src = `assets/pieces/${c}${t}.svg`; }
 ['pointerdown', 'keydown'].forEach((ev) => window.addEventListener(ev, () => { try { actx(); } catch {} }, { passive: true }));
 // play one random take of a sound group; small pitch drift so repeats never sound copy-pasted
 function play(group, vol = 0.7, rate = 1, when = 0) {
@@ -109,17 +111,19 @@ const sfx = {
   win: () => { play('ding', 0.5); play('chips', 0.6, 1, 0.12); buzz([40, 60, 40, 60, 80]); },
   // pool: strength 0..1
   cue: (p = 0.6) => play('cue', 0.25 + p * 0.75, 0.9 + p * 0.2),
-  ball: (v = 300) => play('ball', Math.min(1, 0.12 + v / 900), 0.72 + Math.min(0.15, v / 6000)),
+  // resin balls: short dry tock, louder and a touch brighter the harder they meet
+  ball: (v = 300) => play('clack', Math.min(1, 0.1 + v / 800), 0.94 + Math.min(0.1, v / 8000)) || play('ball', Math.min(1, 0.12 + v / 900), 0.72),
   rail: (v = 300) => play('rail', Math.min(0.9, 0.1 + v / 1000)),
   pocket: () => { play('pocket', 0.75, 0.9); play('wood', 0.25, 0.7, 0.09); },
-  hit: () => play('ball', 0.6, 0.75), drop: () => play('pocket', 0.75, 0.9),
+  hit: () => play('clack', 0.7) || play('ball', 0.6, 0.75), drop: () => play('pocket', 0.75, 0.9),
   // backgammon, cards
-  checker: () => play('checker', 0.75, 0.8) || play('wood', 0.8),
+  checker: () => play('place', 0.85) || play('wood', 0.8),
   dice: () => play('dice', 0.85),
   die: (v = 0.8) => play('die', v),
-  diceTick: (v = 0.3) => play('checker', v, 1.7),
+  diceTick: (v = 0.3) => play('place', v * 0.9, 1.7) || play('checker', v, 1.7),
   shake: () => play('shake', 0.6),
-  card: () => play('card', 0.7),
+  card: () => play('throw', 0.8) || play('card', 0.7),
+  deal: () => play('deal', 0.6) || play('slide', 0.6),
   slide: () => play('slide', 0.6),
   shuffle: () => play('shuffle', 0.55),
   setMuted: (m) => { muted = m; save('mute', m); }, isMuted: () => muted,

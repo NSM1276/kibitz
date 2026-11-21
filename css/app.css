@@ -397,3 +397,30 @@ canvas.gcv { display: block; border-radius: 12px; box-shadow: 0 14px 30px #000a;
 .dk-hand .card.tip { box-shadow: 0 0 0 3px #4fc3ff, 0 0 16px #4fc3ff; transform: translateY(-12px); animation: dktip 1s ease-in-out infinite; }
 @keyframes dktip { 0%,100% { transform: translateY(-8px); } 50% { transform: translateY(-14px); } }
 @media (prefers-reduced-motion: reduce) { .dk-hand .card.tip, .dk-cnt.few { animation: none; } }
+/* coordinates stay readable above the pieces (like lichess) */
+.board .coord { z-index: 3; font-size: 11px; opacity: .95; }
+/* phone held sideways: header and level chips share one row; a board sits on the left at full height,
+   tools, captures and hints in the column beside it (like the big chess apps in landscape) */
+@media (orientation: landscape) and (max-height: 520px) {
+  #app:has(> .lvbar) { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 22px; align-content: start; align-items: center; max-width: 980px; padding-top: 8px; padding-bottom: 12px; }
+  #app:has(> .lvbar) > .top { grid-column: 1; margin-bottom: 4px; min-height: 40px; }
+  #app:has(> .lvbar) > .lvbar { grid-column: 2; margin-bottom: 4px; justify-content: flex-end; flex-wrap: nowrap; }
+  #app:has(> .lvbar) > .top h1 { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #app:has(> .lvbar) > * { grid-column: 1 / -1; min-width: 0; }
+  #app > .stage:has(> .board) { display: contents; }
+  #app > .stage > .board { grid-column: 1; grid-row: 2 / span 6; width: calc(100vh - 92px); margin: 11px; align-self: start; }
+  #app:has(> .stage > .board) > .hint, #app:has(> .stage > .board) > div:last-child, #app > .stage:has(> .board) > :not(.board) { grid-column: 2; }
+  #app:has(> .stage > .board) > .top { max-width: calc(100vh - 70px); }
+  .durak { --cw: 40px; padding: 6px 10px; }
+  .stage:has(> .durak) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+  .stage:has(> .durak) > .gbar { flex-direction: column; margin: 0; }
+  .durak .dk-mid { min-height: 0; margin: 2px 0; }
+  .durak .dk-talon { height: calc(var(--cw) * 1.75); }
+  .dk-opp .card { width: 28px; height: 41px; margin-left: -14px; }
+  .durak .dk-opp { min-height: 44px; }
+  .dk-btns { min-height: 36px; }
+  .dk-hand { padding-top: 4px; }
+  /* the durak hint floats on the empty right side of the felt instead of falling below the screen */
+  #app:has(.durak) > .hint { position: fixed; top: 150px; right: 84px; max-width: 290px; margin: 0; font-size: 14.5px; z-index: 5; pointer-events: none; }
+  #app:has(.durak) > .hint:empty { display: none; }
+}

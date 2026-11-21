@@ -39,7 +39,7 @@ export function playChess(stage, ctx) {
   const xy = (sq) => { const f = FILES.indexOf(sq[0]), r = +sq[1]; return me === 'w' ? [f * 12.5, (8 - r) * 12.5] : [(7 - f) * 12.5, (r - 1) * 12.5]; };
   for (let r = 1; r <= 8; r++) for (let f = 0; f < 8; f++) {
     const sq = FILES[f] + r, [x, y] = xy(sq), el = document.createElement('div');
-    el.className = 'sq ' + ((f + r) % 2 ? 'l' : 'd'); el.style.left = x + '%'; el.style.top = y + '%';
+    el.className = 'sq ' + ((f + r) % 2 ? 'd' : 'l'); el.style.left = x + '%'; el.style.top = y + '%';
     el.onclick = () => onSquare(sq); board.append(el); sqEls[sq] = el;
   }
   for (let i = 0; i < 8; i++) {
@@ -47,7 +47,7 @@ export function playChess(stage, ctx) {
     const c = document.createElement('div'); c.className = 'coord'; c.textContent = file;
     c.style.left = `calc(${i * 12.5 + 12.5}% - 10px)`; c.style.bottom = '2px'; c.style.color = i % 2 ? '#ae8a68' : '#ecd9b9'; board.append(c);
     const d = document.createElement('div'); d.className = 'coord'; d.textContent = rank;
-    d.style.left = '3px'; d.style.top = `calc(${i * 12.5}% + 2px)`; d.style.color = i % 2 ? '#ae8a68' : '#ecd9b9'; board.append(d);
+    d.style.left = '3px'; d.style.top = `calc(${i * 12.5}% + 2px)`; d.style.color = i % 2 ? '#ecd9b9' : '#ae8a68'; board.append(d);
   }
   function drawPieces(fresh = false) {
     if (fresh) { for (const el of pieceEls.values()) el.remove(); pieceEls.clear(); }

@@ -42,7 +42,7 @@ export default {
       const el = cardEl(x.card, 'div'); el.style.cssText = SLOT[x.who] + ';opacity:0;transform:scale(.8);transition:all .3s';
       const who = document.createElement('div'); who.className = 'who'; who.textContent = ROLE[L][x.role]; el.append(who);
       trickEl.append(el);
-      setTimeout(() => { el.style.opacity = '1'; el.style.transform = 'none'; ctx.sfx.slide(); }, 250 + i * 380);
+      setTimeout(() => { el.style.opacity = '1'; el.style.transform = 'none'; ctx.sfx.deal(); }, 250 + i * 380);
     });
 
     const legalCards = legal(task.hand, task.trick, g);
