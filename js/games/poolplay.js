@@ -1,22 +1,26 @@
 // 8-ball vs computer on top of poolphys.js. Simplified WPA-style rules:
 // open table after the break; first legal pot decides groups; foul (scratch, no hit, wrong ball first) = ball in hand;
 // potting the 8 early or with a foul loses, potting it after clearing your group wins.
+// Phone-first: the table fills the screen, turns sideways in landscape, and you shoot by pulling the power bar.
 import { simulate, aimFor, firstContact, POCKETS, W, H, R } from './poolphys.js';
+import { makeView, canFullscreen, toggleFullscreen, phoneLandscape } from './fitview.js';
 
-const M = 24;
+const M = 28, CUSH = 9; // rail width around the playing area, cushion rubber inside it
+const TW = W + 2 * M, TH = H + 2 * M;
 function frame(cb) { let done = false; const go = () => { if (!done) { done = true; cb(performance.now()); } }; requestAnimationFrame(go); setTimeout(go, 34); }
-const COL = { 1: '#f7c600', 2: '#1d4fd8', 3: '#e0242b', 4: '#6b2fb3', 5: '#f57c00', 6: '#0f8a3c', 7: '#8a1c1c', 8: '#111111' };
-const color = (n) => (n === 0 ? '#f7f5ec' : COL[n > 8 ? n - 8 : n]);
+const COL = { 1: '#f5c400', 2: '#1747c9', 3: '#d8232a', 4: '#5b2a9e', 5: '#f07a12', 6: '#0c8a43', 7: '#86201d', 8: '#141414' };
+const color = (n) => (n === 0 ? '#f7f4ea' : COL[n > 8 ? n - 8 : n]);
 const groupOf = (n) => (n >= 1 && n <= 7 ? 'solid' : n >= 9 ? 'stripe' : null);
 const MSG = {
-  break: { en: 'Your break! Drag to aim, set the power, then shoot.', de: 'Du hast den Anstoß! Ziehen zum Zielen, Stärke wählen, stoßen.' },
-  aim: { en: 'Your shot. Drag to aim.', de: 'Du bist dran. Ziehen zum Zielen.' },
-  inHand: { en: 'Ball in hand: drag the white ball where you want it, then aim.', de: 'Freie Lage: Schieb die weiße Kugel, wohin du willst, dann ziele.' },
+  break: { en: 'Your break! Drag on the table to aim, then pull the cue bar and let go.', de: 'Dein Anstoß! Auf dem Tisch ziehen zum Zielen, dann den Queue-Balken ziehen und loslassen.' },
+  aim: { en: 'Your shot. Aim on the table, pull the bar and let go.', de: 'Du bist dran. Zielen, Balken ziehen, loslassen.' },
+  inHand: { en: 'Ball in hand: move the white ball, then aim.', de: 'Freie Lage: Schieb die Weiße, dann ziele.' },
   cpu: { en: 'Computer is playing…', de: 'Der Computer spielt…' },
-  shoot: { en: 'Shoot', de: 'Stoßen' }, power: { en: 'Power', de: 'Stärke' },
-  open: { en: 'Open table', de: 'Tisch offen' },
+  pull: { en: 'pull & release', de: 'ziehen & loslassen' },
+  spinL: { en: 'Spin', de: 'Effet' },
+  open: { en: 'open', de: 'offen' },
   you: { en: 'You', de: 'Du' }, cpuName: { en: 'Computer', de: 'Computer' },
-  solid: { en: 'solids 1–7', de: 'Volle 1–7' }, stripe: { en: 'stripes 9–15', de: 'Halbe 9–15' },
+  solid: { en: 'solids', de: 'Volle' }, stripe: { en: 'stripes', de: 'Halbe' },
   foulScratch: { en: 'Foul: the white went in.', de: 'Foul: Die Weiße ist gefallen.' },
   foulNone: { en: 'Foul: no ball was hit.', de: 'Foul: Keine Kugel getroffen.' },
   foulWrong: { en: 'Foul: wrong ball hit first.', de: 'Foul: Falsche Kugel zuerst getroffen.' },
@@ -40,51 +44,114 @@ function rack() {
   return balls;
 }
 
+// seeded noise so the felt and wood grain look the same every time
+function rng(seed) { return () => ((seed = (seed * 16807) % 2147483647) / 2147483647); }
+
 export function playPool(stage, ctx) {
-  const CW = W + 2 * M, CH = H + 2 * M, dpr = Math.min(2, window.devicePixelRatio || 1);
-  const info = document.createElement('div'); info.className = 'poolinfo';
-  const cv = document.createElement('canvas'); cv.className = 'stagecv';
-  cv.width = CW * dpr; cv.height = CH * dpr; cv.style.aspectRatio = `${CW}/${CH}`;
-  const g = cv.getContext('2d'); g.scale(dpr, dpr);
-  const ctrl = document.createElement('div'); ctrl.className = 'poolctrl';
-  ctrl.innerHTML = `<div class="row"><button class="btn sm" data-n="-1">◀</button><button class="btn sm" data-n="1">▶</button>
-    <label class="pw"><span>${ctx.t(MSG.power)}</span><input type="range" min="8" max="100" value="55"></label></div>
-    <div class="row"><div class="spins"></div><button class="btn primary shoot">${ctx.t(MSG.shoot)}</button></div>`;
-  stage.append(info, cv, ctrl);
-  const powerEl = ctrl.querySelector('input'), shootBtn = ctrl.querySelector('.shoot'), spinsEl = ctrl.querySelector('.spins');
+  const app = document.getElementById('app');
+  app?.classList.add('wide');
+  const wrap = document.createElement('div'); wrap.className = 'pgame';
+  wrap.innerHTML = `<div class="ptop"><button class="pico pexit" title="✕">✕</button><div class="pl me"></div><div class="pl cpu"></div>
+      <button class="pico pfs" title="⛶">⛶</button></div>
+    <div class="phint"></div>
+    <div class="pmain"><div class="pcvbox"><canvas class="gcv"></canvas></div>
+      <div class="pside">
+        <div class="pspinw"><div class="pspin"><i></i></div><span></span></div>
+        <button class="pico pfine" data-n="-1">◀</button>
+        <div class="ppow"><div class="pfill"></div><div class="pcue"></div><span></span></div>
+        <button class="pico pfine" data-n="1">▶</button>
+      </div></div>`;
+  stage.append(wrap);
+  const $ = (s) => wrap.querySelector(s);
+  const cv = $('canvas'), g = cv.getContext('2d'), hintEl = $('.phint'), powEl = $('.ppow'), fillEl = $('.pfill'), cueEl = $('.pcue');
+  const spinEl = $('.pspin'), spinDot = $('.pspin i'), spinLbl = $('.pspinw span');
+  $('.ppow span').textContent = ctx.t(MSG.pull);
+  const view = makeView(cv, TW, TH);
+  const bg = document.createElement('canvas'), bgg = bg.getContext('2d');
 
   let balls = rack(), turn = 'me', groups = { me: null, cpu: null }, inHand = false, breakShot = true, phase = 'aim';
-  let angle = -Math.PI / 2, spin = 0, alive = true, cpuAim = null;
+  let angle = -Math.PI / 2, spin = 0, alive = true, cpuAim = null, power = 0, pulling = null;
   const timers = [];
   const later = (fn, ms) => { const id = setTimeout(() => alive && fn(), ms); timers.push(id); };
   const cue = () => balls.find((b) => b.n === 0);
   const other = (w) => (w === 'me' ? 'cpu' : 'me');
-
-  MSG.spin.forEach((s, i) => {
-    const b = document.createElement('button'); b.className = 'btn sm spin' + (i === 1 ? ' on' : ''); b.textContent = ctx.t(s);
-    b.onclick = () => { spin = i - 1; spinsEl.querySelectorAll('.spin').forEach((x, j) => x.classList.toggle('on', j === i)); draw(); };
-    spinsEl.append(b);
-  });
-  // fine aim buttons (hold to repeat)
-  ctrl.querySelectorAll('[data-n]').forEach((b) => {
-    let iv = null, to = null; const d = +b.dataset.n * 0.1 * Math.PI / 180;
-    const stop = () => { clearTimeout(to); clearInterval(iv); };
-    b.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!myTurn()) return; angle += d; draw(); to = setTimeout(() => { iv = setInterval(() => { angle += d; draw(); }, 50); }, 300); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
-  });
-  shootBtn.onclick = () => { if (myTurn()) shoot({ angle, speed: speedOf(+powerEl.value), spin }); };
-  powerEl.oninput = () => draw();
+  const say = (m) => { hintEl.textContent = m ? ctx.t(m) : ''; };
   const speedOf = (p) => 120 + (p / 100) * 1500;
   const myTurn = () => turn === 'me' && phase === 'aim';
 
-  // ---------- input ----------
-  const toTable = (e) => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) * CW) / r.width - M, ((e.clientY - r.top) * CH) / r.height - M]; };
+  // ---------- layout: pick the bigger table (upright vs sideways) ----------
+  function layout() {
+    if (!alive) return;
+    const fs = (phoneLandscape() || document.fullscreenElement === wrap) && phase !== 'over';
+    wrap.classList.toggle('fs', fs);
+    document.body.style.overflow = fs ? 'hidden' : '';
+    const top = $('.ptop').offsetHeight + hintEl.offsetHeight + 8;
+    const W0 = wrap.clientWidth, H0 = (fs ? wrap.clientHeight : window.innerHeight - 16) - top;
+    const sUp = view.fit(false, W0, H0 - 70), sSide = view.fit(true, W0 - 108, H0);
+    const side = fs || sSide > sUp * 1.05;
+    wrap.classList.toggle('side', side);
+    view.size(side, side ? sSide : sUp);
+    paintTable(); draw();
+  }
+  const ro = new ResizeObserver(() => layout());
+  ro.observe(wrap);
+  const onResize = () => layout();
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+  document.addEventListener('fullscreenchange', onResize);
+  $('.pexit').onclick = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); location.hash = '#/g/pool'; };
+  const fsBtn = $('.pfs'); if (!canFullscreen()) fsBtn.style.display = 'none';
+  fsBtn.onclick = () => toggleFullscreen(wrap);
+
+  // ---------- controls ----------
+  function setSpin(v) {
+    spin = v; spinDot.style.top = 50 - v * 30 + '%';
+    spinLbl.textContent = ctx.t(MSG.spin[v + 1]); draw();
+  }
+  spinEl.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); const r = spinEl.getBoundingClientRect(), y = (e.clientY - r.top) / r.height;
+    setSpin(y < 0.36 ? 1 : y > 0.64 ? -1 : 0); ctx.sfx.tap();
+  });
+  wrap.querySelectorAll('.pfine').forEach((b) => {
+    let iv = null, to = null; const d = +b.dataset.n * 0.12 * Math.PI / 180;
+    const stop = () => { clearTimeout(to); clearInterval(iv); };
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!myTurn()) return; angle += d; draw(); to = setTimeout(() => { iv = setInterval(() => { angle += d; draw(); }, 45); }, 280); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
+  });
+  // power bar: press, pull along the bar, let go = shoot (pull back to the start to cancel)
+  function showPower() {
+    const vert = wrap.classList.contains('side');
+    fillEl.style.cssText = vert ? `height:${power * 100}%;width:100%` : `width:${power * 100}%;height:100%`;
+    cueEl.style.cssText = vert ? `top:${power * 86}%` : `left:${power * 86}%`;
+  }
+  powEl.addEventListener('pointerdown', (e) => {
+    if (!myTurn()) return; e.preventDefault();
+    try { powEl.setPointerCapture(e.pointerId); } catch {}
+    pulling = { x: e.clientX, y: e.clientY }; power = 0; showPower(); draw();
+  });
+  powEl.addEventListener('pointermove', (e) => {
+    if (!pulling) return;
+    const vert = wrap.classList.contains('side'), r = powEl.getBoundingClientRect();
+    const d = vert ? e.clientY - pulling.y : Math.abs(e.clientX - pulling.x);
+    power = Math.max(0, Math.min(1, d / ((vert ? r.height : r.width) * 0.8)));
+    showPower(); draw();
+  });
+  const release = () => {
+    if (!pulling) return; pulling = null;
+    const p = power; power = 0; showPower();
+    if (p > 0.04 && myTurn()) shoot({ angle, speed: speedOf(p * 100), spin }); else draw();
+  };
+  powEl.addEventListener('pointerup', release);
+  powEl.addEventListener('pointercancel', () => { pulling = null; power = 0; showPower(); draw(); });
+
+  // ---------- table input ----------
+  const toTable = (e) => { const p = view.toLocal(e); return [p[0] - M, p[1] - M]; };
   let drag = null;
   cv.addEventListener('pointerdown', (e) => {
     if (!myTurn()) return;
     const p = toTable(e), c = cue();
     try { cv.setPointerCapture(e.pointerId); } catch {}
-    if (inHand && Math.hypot(p[0] - c.x, p[1] - c.y) < 3 * R) drag = 'cue'; else { drag = 'aim'; aimAt(p); }
+    if (inHand && Math.hypot(p[0] - c.x, p[1] - c.y) < 3.2 * R) drag = 'cue'; else { drag = 'aim'; aimAt(p); }
   });
   cv.addEventListener('pointermove', (e) => {
     if (!drag || !myTurn()) return;
@@ -99,69 +166,142 @@ export function playPool(stage, ctx) {
   }
   function placeCue(x, y) { const s = freeSpot(x, y); if (s) { const c = cue(); c.x = s[0]; c.y = s[1]; draw(); } }
 
-  // ---------- drawing ----------
-  function ballAt(x, y, n) {
-    g.save(); g.translate(M + x, M + y);
-    g.fillStyle = '#0005'; g.beginPath(); g.arc(2, 3, R, 0, 7); g.fill();
+  // ---------- static table (painted once per size) ----------
+  function paintTable() {
+    bg.width = cv.width; bg.height = cv.height;
+    const q = bgg; view.apply(q);
+    const rnd = rng(7);
+    // walnut rail with grain
+    const wood = q.createLinearGradient(0, 0, TW, 0);
+    wood.addColorStop(0, '#4b2812'); wood.addColorStop(0.18, '#6d3c1c'); wood.addColorStop(0.5, '#7d4822'); wood.addColorStop(0.82, '#6d3c1c'); wood.addColorStop(1, '#4b2812');
+    q.fillStyle = wood; q.beginPath(); q.roundRect(0, 0, TW, TH, 20); q.fill();
+    q.save(); q.beginPath(); q.roundRect(0, 0, TW, TH, 20); q.clip();
+    for (let i = 0; i < 46; i++) {
+      const x = rnd() * TW; q.strokeStyle = rnd() < 0.5 ? 'rgba(0,0,0,.13)' : 'rgba(255,220,170,.06)'; q.lineWidth = 0.6 + rnd() * 1.6;
+      q.beginPath(); q.moveTo(x, 0); q.bezierCurveTo(x + 6 - rnd() * 12, TH * 0.33, x + 6 - rnd() * 12, TH * 0.66, x + 4 - rnd() * 8, TH); q.stroke();
+    }
+    q.restore();
+    // outer bevel highlight + inner dark edge
+    q.strokeStyle = 'rgba(255,230,190,.28)'; q.lineWidth = 2; q.beginPath(); q.roundRect(1.5, 1.5, TW - 3, TH - 3, 19); q.stroke();
+    q.strokeStyle = 'rgba(0,0,0,.55)'; q.lineWidth = 3; q.strokeRect(M - CUSH - 1.5, M - CUSH - 1.5, W + 2 * CUSH + 3, H + 2 * CUSH + 3);
+    // cushions
+    q.fillStyle = '#0f5634'; q.fillRect(M - CUSH, M - CUSH, W + 2 * CUSH, H + 2 * CUSH);
+    // felt + fine noise
+    const felt = q.createRadialGradient(M + W / 2, M + H / 2, 30, M + W / 2, M + H / 2, H * 0.62);
+    felt.addColorStop(0, '#23985f'); felt.addColorStop(1, '#167246');
+    q.fillStyle = felt; q.fillRect(M, M, W, H);
+    for (let i = 0; i < 2600; i++) { q.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,.07)' : 'rgba(255,255,255,.05)'; q.fillRect(M + rnd() * W, M + rnd() * H, 1.2, 1.2); }
+    // cushion nose shading
+    q.strokeStyle = 'rgba(0,0,0,.35)'; q.lineWidth = 2; q.strokeRect(M + 1, M + 1, W - 2, H - 2);
+    q.strokeStyle = 'rgba(120,220,160,.35)'; q.lineWidth = 1.2; q.strokeRect(M - 0.6, M - 0.6, W + 1.2, H + 1.2);
+    // head string + foot spot
+    q.strokeStyle = 'rgba(255,255,255,.16)'; q.lineWidth = 1.2; q.beginPath(); q.moveTo(M, M + H * 0.75); q.lineTo(M + W, M + H * 0.75); q.stroke();
+    q.fillStyle = 'rgba(255,255,255,.35)'; q.beginPath(); q.arc(M + W / 2, M + H * 0.25, 2.2, 0, 7); q.fill();
+    // pearl diamonds on the rails
+    const dia = (x, y) => { q.save(); q.translate(x, y); q.rotate(Math.PI / 4); const gr = q.createLinearGradient(-3, -3, 3, 3); gr.addColorStop(0, '#fffaf0'); gr.addColorStop(1, '#c9b48a'); q.fillStyle = gr; q.fillRect(-2.6, -2.6, 5.2, 5.2); q.restore(); };
+    const rm = (M - CUSH) / 2;
+    for (let i = 1; i < 4; i++) for (const y of [rm, TH - rm]) dia(M + (W * i) / 4, y);
+    for (let i = 1; i < 8; i++) { if (i === 4) continue; for (const x of [rm, TW - rm]) dia(x, M + (H * i) / 8); }
+    // pockets: cut through cushion, dark hole, leather rim
+    POCKETS.forEach(([px, py], i) => {
+      const side = i === 2 || i === 3, r = side ? 16 : 19, x = M + px + (side ? (px ? 4 : -4) : 0), y = M + py;
+      q.fillStyle = '#2a170b'; q.beginPath(); q.arc(x, y, r + 5, 0, 7); q.fill();
+      const ho = q.createRadialGradient(x, y, 2, x, y, r); ho.addColorStop(0, '#000'); ho.addColorStop(0.75, '#070707'); ho.addColorStop(1, '#262626');
+      q.fillStyle = ho; q.beginPath(); q.arc(x, y, r, 0, 7); q.fill();
+      q.strokeStyle = 'rgba(255,220,170,.22)'; q.lineWidth = 1.4; q.beginPath(); q.arc(x, y, r + 4, 0, 7); q.stroke();
+    });
+  }
+
+  // ---------- dynamic drawing ----------
+  function ballAt(x, y, n, alpha = 1) {
+    g.save(); g.globalAlpha = alpha; g.translate(M + x, M + y); if (view.rot) g.rotate(-Math.PI / 2);
+    g.fillStyle = 'rgba(0,0,0,.38)'; g.beginPath(); g.ellipse(2.4, 3.4, R * 1.02, R * 0.9, 0, 0, 7); g.fill();
+    const base = color(n);
     if (n > 8) {
-      g.fillStyle = '#f7f5ec'; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill();
-      g.save(); g.beginPath(); g.arc(0, 0, R, 0, 7); g.clip(); g.fillStyle = color(n); g.fillRect(-R, -R * 0.55, 2 * R, R * 1.1); g.restore();
-    } else { g.fillStyle = color(n); g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill(); }
-    if (n) { g.fillStyle = '#fff'; g.beginPath(); g.arc(0, 0, R * 0.5, 0, 7); g.fill(); g.fillStyle = '#111'; g.font = `bold ${R * 0.72}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n, 0, 0.5); }
-    const sh = g.createRadialGradient(-R * 0.35, -R * 0.4, 1, 0, 0, R); sh.addColorStop(0, '#ffffffaa'); sh.addColorStop(0.35, '#ffffff10'); sh.addColorStop(1, '#00000040');
+      g.fillStyle = '#f7f4ea'; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill();
+      g.save(); g.beginPath(); g.arc(0, 0, R, 0, 7); g.clip(); g.fillStyle = base; g.fillRect(-R, -R * 0.56, 2 * R, R * 1.12); g.restore();
+    } else { g.fillStyle = base; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill(); }
+    if (n) {
+      g.fillStyle = '#fbf8ee'; g.beginPath(); g.arc(0, 0, R * 0.5, 0, 7); g.fill();
+      g.fillStyle = '#151515'; g.font = `bold ${n > 9 ? R * 0.62 : R * 0.74}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n, 0, 0.6);
+    }
+    const sh = g.createRadialGradient(-R * 0.38, -R * 0.42, R * 0.05, 0, 0, R * 1.05);
+    sh.addColorStop(0, 'rgba(255,255,255,.55)'); sh.addColorStop(0.28, 'rgba(255,255,255,.07)'); sh.addColorStop(0.72, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.45)');
     g.fillStyle = sh; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.ellipse(-R * 0.4, -R * 0.46, R * 0.2, R * 0.13, -0.6, 0, 7); g.fill();
     g.restore();
   }
-  function tableBg() {
-    g.clearRect(0, 0, CW, CH);
-    const wood = g.createLinearGradient(0, 0, CW, 0); wood.addColorStop(0, '#6e4020'); wood.addColorStop(0.5, '#86522b'); wood.addColorStop(1, '#6e4020');
-    g.fillStyle = wood; g.beginPath(); g.roundRect(0, 0, CW, CH, 16); g.fill();
-    const felt = g.createRadialGradient(CW / 2, CH / 2, 40, CW / 2, CH / 2, CH * 0.7); felt.addColorStop(0, '#1f8f5a'); felt.addColorStop(1, '#126b41');
-    g.fillStyle = felt; g.fillRect(M, M, W, H);
-    g.strokeStyle = '#0d4f30'; g.lineWidth = 3; g.strokeRect(M, M, W, H);
-    g.fillStyle = '#f3e3c3';
-    for (let i = 1; i < 4; i++) for (const y of [M / 2, CH - M / 2]) { g.beginPath(); g.arc(M + (W * i) / 4, y, 2.2, 0, 7); g.fill(); }
-    for (let i = 1; i < 8; i++) { if (i === 4) continue; for (const x of [M / 2, CW - M / 2]) { g.beginPath(); g.arc(x, M + (H * i) / 8, 2.2, 0, 7); g.fill(); } }
-    g.strokeStyle = '#ffffff22'; g.lineWidth = 1; g.beginPath(); g.moveTo(M, M + H * 0.75); g.lineTo(M + W, M + H * 0.75); g.stroke(); // head string
-    POCKETS.forEach(([px, py], i) => { g.fillStyle = '#060606'; g.beginPath(); g.arc(M + px, M + py, i === 2 || i === 3 ? 15 : 17, 0, 7); g.fill(); });
-  }
+  // tapered cue: tip, white ferrule, maple shaft, dark butt with a brass ring
   function cueStick(c, a, pull) {
-    const d = [Math.cos(a), Math.sin(a)], back = 16 + pull, len = 230;
-    const p1 = [c.x - d[0] * back, c.y - d[1] * back], p2 = [c.x - d[0] * (back + len), c.y - d[1] * (back + len)];
-    g.save(); g.lineCap = 'round';
-    g.strokeStyle = '#00000055'; g.lineWidth = 8; g.beginPath(); g.moveTo(M + p1[0] + 3, M + p1[1] + 4); g.lineTo(M + p2[0] + 3, M + p2[1] + 4); g.stroke();
-    const grd = g.createLinearGradient(M + p1[0], M + p1[1], M + p2[0], M + p2[1]); grd.addColorStop(0, '#f2f2f2'); grd.addColorStop(0.04, '#3b82c4'); grd.addColorStop(0.06, '#e8c48a'); grd.addColorStop(0.7, '#b07a3c'); grd.addColorStop(1, '#2a1a0c');
-    g.strokeStyle = grd; g.lineWidth = 6; g.beginPath(); g.moveTo(M + p1[0], M + p1[1]); g.lineTo(M + p2[0], M + p2[1]); g.stroke(); g.restore();
+    const dx = Math.cos(a), dy = Math.sin(a), nx = -dy, ny = dx, back = R + 4 + pull, len = 330;
+    const at = (t) => [M + c.x - dx * (back + t * len), M + c.y - dy * (back + t * len)];
+    const wid = (t) => 2.3 + t * 3.4; // half width
+    const seg = (t0, t1, fill) => {
+      const [x0, y0] = at(t0), [x1, y1] = at(t1), w0 = wid(t0), w1 = wid(t1);
+      g.fillStyle = fill; g.beginPath();
+      g.moveTo(x0 + nx * w0, y0 + ny * w0); g.lineTo(x1 + nx * w1, y1 + ny * w1); g.lineTo(x1 - nx * w1, y1 - ny * w1); g.lineTo(x0 - nx * w0, y0 - ny * w0); g.closePath(); g.fill();
+    };
+    g.save();
+    g.translate(4, 6); g.globalAlpha = 0.35; seg(0, 1, '#000'); g.globalAlpha = 1; g.translate(-4, -6);
+    const [sx, sy] = at(0.05), [ex, ey] = at(0.6);
+    const maple = g.createLinearGradient(sx + nx * 3, sy + ny * 3, sx - nx * 3, sy - ny * 3);
+    maple.addColorStop(0, '#f6e2b8'); maple.addColorStop(0.5, '#e2bf82'); maple.addColorStop(1, '#b58a4f');
+    const butt = g.createLinearGradient(ex + nx * 6, ey + ny * 6, ex - nx * 6, ey - ny * 6);
+    butt.addColorStop(0, '#5a2d14'); butt.addColorStop(0.5, '#2e140a'); butt.addColorStop(1, '#150904');
+    seg(0, 0.012, '#2f6fb3'); seg(0.012, 0.045, '#f4f1ea'); seg(0.045, 0.6, maple); seg(0.6, 0.62, '#d9ac5c'); seg(0.62, 0.97, butt); seg(0.97, 1, '#0b0b0b');
+    g.restore();
+  }
+  // thick line with a dark outline so it reads on any felt and on small screens
+  function line(x0, y0, x1, y1, col, w, dash) {
+    g.save(); g.lineCap = 'round'; if (dash) g.setLineDash(dash);
+    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = w + 2.2; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); g.restore();
+  }
+  function ring(x, y, r, col, w, fill) {
+    g.save(); if (fill) { g.fillStyle = fill; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = w + 2.2; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke();
+    g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); g.restore();
+  }
+  function arrowHead(x, y, a, col) {
+    g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = col; g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(7, 0); g.lineTo(-5, -6); g.lineTo(-5, 6); g.closePath(); g.stroke(); g.fill(); g.restore();
+  }
+  // distance from the cue ball to the cushion along the aim
+  function toWall(c, a) {
+    const dx = Math.cos(a), dy = Math.sin(a); let t = 1e9;
+    if (dx > 1e-6) t = Math.min(t, (W - R - c.x) / dx); if (dx < -1e-6) t = Math.min(t, (R - c.x) / dx);
+    if (dy > 1e-6) t = Math.min(t, (H - R - c.y) / dy); if (dy < -1e-6) t = Math.min(t, (R - c.y) / dy);
+    return Math.max(0, t);
   }
   function guide() {
-    const c = cue(), fc = firstContact(balls, c.x, c.y, angle);
-    g.save(); g.setLineDash([4, 4]); g.strokeStyle = '#ffffffaa'; g.lineWidth = 1.4;
-    if (!fc) { const L = 600; g.beginPath(); g.moveTo(M + c.x, M + c.y); g.lineTo(M + c.x + Math.cos(angle) * L, M + c.y + Math.sin(angle) * L); g.stroke(); g.restore(); return; }
-    g.beginPath(); g.moveTo(M + c.x, M + c.y); g.lineTo(M + fc.gx, M + fc.gy); g.stroke();
-    g.setLineDash([3, 3]); g.beginPath(); g.arc(M + fc.gx, M + fc.gy, R, 0, 7); g.stroke();
-    const objLen = [150, 70, 30][ctx.level] ?? 70;
-    g.setLineDash([2, 4]); g.strokeStyle = '#e8c46acc';
-    g.beginPath(); g.moveTo(M + fc.ball.x, M + fc.ball.y); g.lineTo(M + fc.ball.x + fc.ox * objLen, M + fc.ball.y + fc.oy * objLen); g.stroke();
-    if (ctx.level === 0) { // where the white goes (90° rule)
-      let tx = -fc.oy, ty = fc.ox; if (tx * Math.cos(angle) + ty * Math.sin(angle) < 0) { tx = -tx; ty = -ty; }
-      g.strokeStyle = '#ffffff55'; g.beginPath(); g.moveTo(M + fc.gx, M + fc.gy); g.lineTo(M + fc.gx + tx * 60, M + fc.gy + ty * 60); g.stroke();
+    const c = cue(), fc = firstContact(balls, c.x, c.y, angle), WHITE = 'rgba(255,255,255,.95)', GOLD = '#ffd45a';
+    if (!fc) {
+      const L = toWall(c, angle), ex = M + c.x + Math.cos(angle) * L, ey = M + c.y + Math.sin(angle) * L;
+      line(M + c.x, M + c.y, ex, ey, WHITE, 2.6); ring(ex, ey, R, WHITE, 2.4, 'rgba(255,255,255,.12)'); return;
     }
-    // warn when the first ball is not yours
+    line(M + c.x, M + c.y, M + fc.gx, M + fc.gy, WHITE, 2.6);
+    ring(M + fc.gx, M + fc.gy, R, WHITE, 2.4, 'rgba(255,255,255,.14)');
+    const objLen = [150, 80, 40][ctx.level] ?? 80, ox = M + fc.ball.x + fc.ox * (R + 3), oy = M + fc.ball.y + fc.oy * (R + 3);
+    const tx = ox + fc.ox * objLen, ty = oy + fc.oy * objLen;
+    line(ox, oy, tx, ty, GOLD, 3.2); arrowHead(tx, ty, Math.atan2(fc.oy, fc.ox), GOLD);
+    if (ctx.level === 0) { // where the white goes (90° rule)
+      let qx = -fc.oy, qy = fc.ox; if (qx * Math.cos(angle) + qy * Math.sin(angle) < 0) { qx = -qx; qy = -qy; }
+      line(M + fc.gx, M + fc.gy, M + fc.gx + qx * 60, M + fc.gy + qy * 60, 'rgba(255,255,255,.6)', 2, [7, 6]);
+    }
     const own = groups[turn];
     const bad = (own && groupOf(fc.ball.n) !== own && !(fc.ball.n === 8 && cleared(turn))) || (!own && fc.ball.n === 8);
-    if (bad) { g.setLineDash([]); g.strokeStyle = '#d0453a'; g.lineWidth = 2; g.beginPath(); g.arc(M + fc.ball.x, M + fc.ball.y, R + 3, 0, 7); g.stroke(); }
-    g.restore();
+    if (bad) ring(M + fc.ball.x, M + fc.ball.y, R + 4, '#ff4a3a', 3);
   }
   function draw(pos) {
-    if (!alive) return;
-    tableBg();
+    if (!alive || !bg.width) return;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(bg, 0, 0); view.apply(g);
     const list = pos || balls;
     if (!pos && myTurn()) guide();
     for (const b of list) if (b) ballAt(b.x, b.y, b.n);
     if (!pos && phase === 'aim') {
       if (turn === 'me') {
-        if (inHand) { const c = cue(); g.save(); g.strokeStyle = '#e8c46a'; g.setLineDash([3, 3]); g.lineWidth = 2; g.beginPath(); g.arc(M + c.x, M + c.y, R + 6, 0, 7); g.stroke(); g.restore(); }
-        cueStick(cue(), angle, 6 + (+powerEl.value) * 0.35);
+        if (inHand) { const c = cue(); const k = (performance.now() / 600) % 1; ring(M + c.x, M + c.y, R + 6 + k * 4, '#ffd45a', 2.6); }
+        cueStick(cue(), angle, 4 + power * 70);
       } else if (cpuAim) cueStick(cue(), cpuAim.a, cpuAim.pull);
     }
     renderInfo();
@@ -170,12 +310,16 @@ export function playPool(stage, ctx) {
     const gname = (w) => (groups[w] ? ctx.t(MSG[groups[w]]) : ctx.t(MSG.open));
     const gone = (gp) => [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15].filter((n) => groupOf(n) === gp && !balls.some((b) => b.n === n));
     const dots = (w) => (groups[w] ? gone(groups[w]) : []).map((n) => `<i class="pb ${n > 8 ? 'st' : ''}" style="--c:${color(n)}">${n}</i>`).join('');
-    info.innerHTML = `<div class="pl ${turn === 'me' ? 'on' : ''}"><b>${ctx.t(MSG.you)}</b> · ${gname('me')}<div>${dots('me')}</div></div>
-      <div class="pl ${turn === 'cpu' ? 'on' : ''}"><b>${ctx.t(MSG.cpuName)}</b> · ${gname('cpu')}<div>${dots('cpu')}</div></div>`;
-    shootBtn.disabled = !myTurn();
+    const html = (w, name) => `<b>${ctx.t(name)}</b> <small>${gname(w)}</small><span>${dots(w)}</span>`;
+    const me = $('.pl.me'), cp = $('.pl.cpu'), hm = html('me', MSG.you), hc = html('cpu', MSG.cpuName);
+    if (me.innerHTML !== hm) me.innerHTML = hm; if (cp.innerHTML !== hc) cp.innerHTML = hc;
+    me.classList.toggle('on', turn === 'me'); cp.classList.toggle('on', turn === 'cpu');
+    powEl.classList.toggle('off', !myTurn());
   }
   const cleared = (w) => groups[w] && !balls.some((b) => groupOf(b.n) === groups[w]);
-
+  // ball-in-hand ring pulses
+  const pulse = () => { if (!alive) return; if (inHand && myTurn() && !drag && !pulling) draw(); later(() => frame(pulse), 60); };
+  pulse();
   // ---------- shot playback ----------
   function shoot(shot) {
     phase = 'anim'; renderInfo();
@@ -210,7 +354,7 @@ export function playPool(stage, ctx) {
       if (breakShot) { balls.push({ n: 8, ...spot(W / 2, H * 0.25) }); }
       else {
         const won = wasCleared && !foul;
-        phase = 'over'; draw();
+        phase = 'over'; layout();
         if (shooter === 'me') ctx.over(won ? { result: 'win', text: MSG.win8 } : { result: 'lose', text: MSG.lose8early });
         else ctx.over(won ? { result: 'lose', text: MSG.cpuWin8 } : { result: 'win', text: MSG.cpuLose8 });
         return;
@@ -228,8 +372,8 @@ export function playPool(stage, ctx) {
     turn = keep ? shooter : other(shooter);
     inHand = !!foul;
     phase = 'aim';
-    if (turn === 'me') { ctx.hint(inHand ? MSG.inHand : MSG.aim); draw(); }
-    else { ctx.hint(MSG.cpu); draw(); later(cpuTurn, 700); }
+    if (turn === 'me') { say(inHand ? MSG.inHand : MSG.aim); draw(); }
+    else { say(MSG.cpu); draw(); later(cpuTurn, 700); }
   }
   function spot(x, y) {
     for (let k = 0; k < 40; k++) { const s = freeSpot(x, y + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (2 * R + 1)); if (s) return { x: s[0], y: s[1] }; }
@@ -306,9 +450,16 @@ export function playPool(stage, ctx) {
     frame(aimAnim);
   }
 
-  ctx.hint(MSG.break);
-  draw();
+  say(MSG.break); setSpin(0);
+  layout();
+  if (window.innerWidth < 700) later(() => window.scrollTo(0, wrap.getBoundingClientRect().top + window.scrollY - 4), 120);
   window.__pooldbg = () => ({ turn, phase, inHand, groups, balls: balls.map((b) => ({ ...b })), breakShot });
   window.__poolshoot = (a, p, s) => { if (myTurn()) { angle = a; shoot({ angle: a, speed: speedOf(p), spin: s || 0 }); } };
-  return () => { alive = false; timers.forEach(clearTimeout); };
+  return () => {
+    alive = false; timers.forEach(clearTimeout); ro.disconnect();
+    window.removeEventListener('resize', onResize); window.removeEventListener('orientationchange', onResize);
+    document.removeEventListener('fullscreenchange', onResize);
+    document.body.style.overflow = ''; app?.classList.remove('wide');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
 }
