@@ -1,6 +1,7 @@
 import { start, moves, apply, bestMove } from './checkerslogic.js';
 
 const MSG = {
+  undo: { en: 'Undo', de: 'Zurück' }, hintBtn: { en: 'Hint', de: 'Tipp' },
   you: { en: 'Your move (white). Tap a piece, then a square.', de: 'Du ziehst (Weiß). Tippe einen Stein, dann ein Feld.' },
   must: { en: 'You must capture! The glowing pieces can take.', de: 'Schlagpflicht! Die leuchtenden Steine können schlagen.' },
   more: { en: 'Keep jumping…', de: 'Weiter schlagen…' },
@@ -20,8 +21,17 @@ export default {
     let b = start(), turn = 1, alive = true, sel = null, partial = null, quiet = 0, busy = false;
     const timers = [];
     const later = (fn, ms) => { const id = setTimeout(() => alive && fn(), ms); timers.push(id); };
+    const capTop = document.createElement('div'); capTop.className = 'capt';
     const board = document.createElement('div'); board.className = 'board ckboard';
-    stage.append(board);
+    const capBot = document.createElement('div'); capBot.className = 'capt';
+    stage.append(capTop, board, capBot);
+    const hist = []; let hintM = null;
+    // captured pieces under / over the board (each side starts with 12)
+    function captures() {
+      const mine = b.filter((x) => x > 0).length, theirs = b.filter((x) => x < 0).length;
+      const row = (n, cls) => '<i class="ckmini ' + cls + '"></i>'.repeat(n);
+      capBot.innerHTML = row(12 - theirs, 'b'); capTop.innerHTML = row(12 - mine, 'w');
+    }
     const sqEls = [], pcs = new Map();
     const pos = (sq) => [(sq & 7) * 12.5, (sq >> 3) * 12.5];
     for (let sq = 0; sq < 64; sq++) {
@@ -43,8 +53,10 @@ export default {
       });
     }
     function marks() {
-      sqEls.forEach((el) => el.classList.remove('sel', 'tgt', 'hintsq', 'from', 'to'));
+      sqEls.forEach((el) => el.classList.remove('sel', 'tgt', 'hintsq', 'from', 'to', 'tipsq'));
+      if (tools) { tools.set('undo', turn === 1 && !busy && (hist.length > 0 || !!partial)); tools.set('hint', turn === 1 && !busy && !partial); }
       if (turn !== 1 || busy) return;
+      if (hintM) { sqEls[hintM.from].classList.add('tipsq'); hintM.path.forEach((q) => sqEls[q].classList.add('tipsq')); }
       const ms = legalNow();
       if (!sel && ms[0] && ms[0].caps.length) new Set(ms.map((m) => partial ? partial.at : m.from)).forEach((s) => sqEls[s].classList.add('hintsq'));
       if (sel != null) {
@@ -110,9 +122,10 @@ export default {
       sel = sq; ctx.hint(MSG.more); marks();
     }
     function finish(m) {
+      hist.push({ b: b.slice(), quiet }); hintM = null;
       const before = b; b = apply(b, m); partial = null; sel = null; busy = true; marks();
       quiet = m.caps.length ? 0 : quiet + 1;
-      later(() => vanish(() => { draw(); crown(before, m); lastMarks(m); if (!checkEnd(-1)) { turn = -1; computer(); } }), 300);
+      later(() => vanish(() => { draw(); captures(); crown(before, m); lastMarks(m); if (!checkEnd(-1)) { turn = -1; computer(); } }), 300);
     }
     function lastMarks(m) { sqEls[m.from].classList.add('from'); sqEls[m.path.at(-1)].classList.add('to'); }
     function checkEnd(next) {
@@ -132,7 +145,7 @@ export default {
           } else {
             const before = b; b = apply(b, m); quiet = m.caps.length ? 0 : quiet + 1;
             vanish(() => {
-              draw(); crown(before, m); turn = 1; busy = false;
+              draw(); captures(); crown(before, m); turn = 1; busy = false;
               if (!checkEnd(1)) { const ms = moves(b, 1); ctx.hint(ms[0] && ms[0].caps.length ? MSG.must : MSG.you); marks(); lastMarks(m); }
             });
           }
@@ -140,7 +153,22 @@ export default {
         hop();
       }, moves(b, -1).length <= 1 ? 250 : 450 + Math.random() * 400);
     }
-    draw(); marks(); ctx.hint(MSG.you);
+    // tools: take back the last move (yours and the computer's reply), show the best move
+    let tools = null;
+    tools = ctx.tools([
+      { id: 'undo', icon: '↶', label: MSG.undo, fn: () => {
+        if (turn !== 1 || busy) return;
+        if (partial) { partial = null; sel = null; }
+        else if (hist.length) { const h = hist.pop(); b = h.b; quiet = h.quiet; }
+        hintM = null; draw(); captures(); marks(); ctx.hint(MSG.you);
+      } },
+      { id: 'hint', icon: '💡', label: MSG.hintBtn, fn: () => {
+        if (turn !== 1 || busy || partial) return;
+        hintM = bestMove(b, 1, 2); sel = null; marks();
+      } },
+    ]);
+    stage.append(tools);
+    draw(); captures(); marks(); ctx.hint(MSG.you);
     window.__ckdbg = () => ({ turn, busy, sel, partial, quiet, b: b.join(',') });
     return () => { alive = false; timers.forEach(clearTimeout); };
   },

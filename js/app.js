@@ -31,7 +31,19 @@ const UI = {
   draw: { en: 'Draw', de: 'Unentschieden' },
   lv: [{ en: 'Easy', de: 'Leicht' }, { en: 'Medium', de: 'Mittel' }, { en: 'Hard', de: 'Schwer' }],
   trainer: { en: 'Trainer tasks', de: 'Trainer-Aufgaben' },
+  wins: { en: 'Wins', de: 'Siege' }, losses: { en: 'Losses', de: 'Niederlagen' }, draws: { en: 'Draws', de: 'Remis' },
+  streak: { en: 'Streak', de: 'Serie' }, best: { en: 'Best', de: 'Rekord' }, newBest: { en: 'New best streak!', de: 'Neuer Serien-Rekord!' },
 };
+// per game and level: wins, losses, draws, current and best winning streak (local only)
+let stats = load('stats') || {};
+function record(id, level, result) {
+  const k = id + ':' + level, s = (stats[k] ||= { w: 0, l: 0, d: 0, streak: 0, best: 0 });
+  if (result === 'win') { s.w++; s.streak++; } else if (result === 'lose') { s.l++; s.streak = 0; } else { s.d++; }
+  const isBest = result === 'win' && s.streak > s.best && s.streak >= 2;
+  s.best = Math.max(s.best, s.streak);
+  save('stats', stats);
+  return { ...s, isBest };
+}
 let lang = load('lang') || ((navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en');
 const t = (o) => (o == null ? '' : typeof o === 'string' ? o : (o[lang] ?? o.en ?? ''));
 
@@ -207,16 +219,32 @@ function playScreen(g) {
     lvBar.innerHTML = '';
     UI.lv.forEach((name, i) => lvBar.append(h('button', { class: 'lvchip' + (i === level ? ' on' : ''), onclick: () => { level = i; save(key, i); start(); } }, t(name))));
     lvBar.append(h('button', { class: 'lvchip new', onclick: () => start() }, '↻ ' + t(UI.newGame)));
+    let ended = false;
     const ctx = {
-      lang, t, sfx, toast, level,
+      lang, t, sfx, toast, level, restart: () => start(),
       hint: (msg) => { hint.textContent = msg ? t(msg) : ''; },
+      // a row of round tool buttons (icon over a short label), like the bottom bar of the big chess apps
+      tools: (list) => {
+        const bar = h('div', { class: 'gbar' }), btns = {};
+        for (const b of list) {
+          const el = h('button', { class: 'gtool', onclick: () => { if (!el.disabled) { sfx.tap(); b.fn(); } } }, h('i', {}, b.icon), h('span', {}, t(b.label)));
+          btns[b.id] = el; bar.append(el);
+        }
+        bar.set = (id, on) => { if (btns[id]) btns[id].disabled = !on; };
+        return bar;
+      },
       over: ({ result, text }) => {
+        if (ended) return; ended = true;
         const ok = result === 'win';
         ok ? sfx.win() : result === 'lose' ? sfx.lose() : sfx.ok();
         if (ok) confetti();
+        const st = record(g.id, level, result);
         fb.innerHTML = '';
+        const stat = (n, label, cls = '') => h('div', { class: 'sti ' + cls }, h('b', {}, String(n)), h('span', {}, t(label)));
         fb.append(h('div', { class: 'feedback ' + (ok ? 'ok' : result === 'lose' ? 'bad' : '') },
           h('div', { class: 'fh' }, t(UI[result])), text ? h('div', { class: 'fx' }, t(text)) : null,
+          st.isBest ? h('div', { class: 'fbest' }, '🔥 ' + t(UI.newBest)) : null,
+          h('div', { class: 'stats' }, stat(st.w, UI.wins, 'w'), stat(st.l, UI.losses, 'l'), stat(st.d, UI.draws), stat(st.streak, UI.streak, 's'), stat(st.best, UI.best)),
           h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', onclick: () => start() }, t(UI.newGame)))));
         fb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       },

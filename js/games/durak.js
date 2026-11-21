@@ -6,6 +6,7 @@ const SYM = { C: '♣', S: '♠', H: '♥', D: '♦' };
 const RN = { en: { T: '10', J: 'J', Q: 'Q', K: 'K', A: 'A' }, de: { T: '10', J: 'B', Q: 'D', K: 'K', A: 'A' } };
 const rv = (c) => RANKS.indexOf(c[1]);
 const MSG = {
+  hintBtn: { en: 'Hint', de: 'Tipp' }, bito: { en: 'Discard', de: 'Ablage' }, tipTake: { en: 'Better take the cards.', de: 'Besser aufnehmen.' }, tipDone: { en: 'Nothing good to add: tap Done.', de: 'Nichts Gutes nachzulegen: tippe auf Fertig.' },
   attack: { en: 'You attack: play any card.', de: 'Du greifst an: Spiele eine beliebige Karte.' },
   addMore: { en: 'Add a card of the same rank, or tap “Done”.', de: 'Lege eine Karte gleichen Werts nach oder tippe „Fertig“.' },
   defend: { en: 'Beat the card: higher of the same suit, or a trump. Or take.', de: 'Stich die Karte: höher in derselben Farbe oder Trumpf. Oder nimm auf.' },
@@ -39,7 +40,7 @@ export default {
     const trumpCard = talon[0];            // bottom card, drawn last
     const T = trumpCard[0];
     const hands = { me: [], cpu: [] };
-    let attacker = 'me', table = [], limit = 6, phase = 'attack', taking = false, busy = false;
+    let attacker = 'me', table = [], limit = 6, phase = 'attack', taking = false, busy = false, bito = 0, tip = null;
     const beats = (a, d) => (d[0] === a[0] && rv(d) > rv(a)) || (d[0] === T && a[0] !== T);
     const val = (c) => rv(c) + (c[0] === T ? 10 : 0);
     const sortHand = (h) => h.sort((a, b) => (a[0] === T) - (b[0] === T) || SUITS.indexOf(a[0]) - SUITS.indexOf(b[0]) || rv(a) - rv(b));
@@ -51,9 +52,10 @@ export default {
     attacker = lowT(hands.cpu) < lowT(hands.me) ? 'cpu' : 'me';
 
     const root = document.createElement('div'); root.className = 'durak';
-    root.innerHTML = `<div class="dk-opp"></div><div class="dk-mid"><div class="dk-talon"></div><div class="dk-table"></div></div><div class="dk-btns"></div><div class="dk-hand"></div>`;
+    root.innerHTML = `<div class="dk-top"><div class="dk-cnt"></div><div class="dk-opp"></div><div class="dk-bito"></div></div><div class="dk-mid"><div class="dk-talon"></div><div class="dk-table"></div></div><div class="dk-btns"></div><div class="dk-hand"></div>`;
     stage.append(root);
     const oppEl = root.querySelector('.dk-opp'), talonEl = root.querySelector('.dk-talon'), tableEl = root.querySelector('.dk-table'), handEl = root.querySelector('.dk-hand'), btnEl = root.querySelector('.dk-btns');
+    const cntEl = root.querySelector('.dk-cnt'), bitoEl = root.querySelector('.dk-bito');
 
     function cardEl(c, tag = 'div') {
       const el = document.createElement(tag); el.className = 'card s' + c[0]; el.dataset.k = c;
@@ -71,13 +73,15 @@ export default {
     function render() {
       flipRender(root, build, {
         origin: () => talonEl.querySelector('.pile') || talonEl.querySelector('.trumpcard') || talonEl,
-        discard: () => { const r = root.getBoundingClientRect(); return { x: r.right + 30, y: r.top + r.height * 0.4 }; },
+        discard: () => { const r = bitoEl.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
         onBorn: (i) => { setTimeout(() => alive && ctx.sfx.slide(), i * 70); },
         order: (el) => { const box = el.parentElement, i = [...box.children].indexOf(el); return box === oppEl ? 2 * i : box === handEl ? 2 * i + 1 : 100 + i; },
       });
     }
     function build() {
       oppEl.innerHTML = ''; hands.cpu.forEach((c) => oppEl.append(back(c)));
+      cntEl.textContent = hands.cpu.length; cntEl.classList.toggle('few', hands.cpu.length <= 2 && !talon.length);
+      bitoEl.innerHTML = bito ? '<i></i><i></i><i></i><b>' + bito + '</b>' : ''; bitoEl.title = t(MSG.bito);
       talonEl.innerHTML = '';
       if (talon.length) {
         const tc = cardEl(trumpCard); tc.classList.add('trumpcard'); talonEl.append(tc);
@@ -90,10 +94,12 @@ export default {
       sortHand(hands.me).forEach((c) => {
         const el = cardEl(c, 'button');
         if (!busy && !playable(c)) el.classList.add('illegal'); else if (!busy) el.classList.add('ok');
+        if (!busy && tip === c) el.classList.add('tip');
         el.onclick = () => tapCard(c); handEl.append(el);
       });
       fit();
       btnEl.innerHTML = '';
+      if (tools) tools.set('hint', !busy && !taking);
       if (busy) return;
       if (attacker === 'me' && table.length && !unbeaten().length && !taking) btnEl.append(btn(MSG.done, () => endBout()));
       if (attacker === 'me' && taking) btnEl.append(btn(MSG.done, () => endBout()));
@@ -115,6 +121,7 @@ export default {
     }
     function tapCard(c) {
       if (busy) return;
+      tip = null;
       if (attacker === 'me') {
         if (table.length && !rankOnTable().has(c[1])) return ctx.toast(t(MSG.noRank));
         if (table.length && !(table.length < limit && unbeaten().length < hands.cpu.length)) return ctx.toast(t(MSG.full));
@@ -168,7 +175,7 @@ export default {
       if (taking) {
         hands[def].push(...table.flatMap((p) => [p.a, p.d].filter(Boolean)));
         ctx.hint(def === 'me' ? MSG.youTake : MSG.cpuTakes);
-      } else { ctx.hint(MSG.beaten); }
+      } else { ctx.hint(MSG.beaten); bito += table.length * 2; }
       const tookIt = taking;
       table = []; taking = false;
       ctx.sfx.slide(); setTimeout(() => ctx.sfx.slide(), 220);
@@ -191,7 +198,27 @@ export default {
       ctx.over(m && c ? { result: 'draw', text: MSG.drawText } : m ? { result: 'win', text: MSG.winText } : { result: 'lose', text: MSG.loseText });
       return true;
     }
-    window.__dkdbg = () => ({ busy, attacker, taking, table: table.length, me: hands.me.length, cpu: hands.cpu.length, talon: talon.length });
+    // hint: the card a good player would lay now (cheapest attack, cheapest beat), or advise to take / stop
+    function suggest() {
+      if (attacker === 'me') {
+        const ok = hands.me.filter(playable).sort((a, b) => val(a) - val(b));
+        const c = ok[0];
+        if (!c || (table.length && (c[0] === T || rv(c) >= 7) && talon.length)) return { say: table.length ? MSG.tipDone : null };
+        return { card: c };
+      }
+      const p = unbeaten()[0]; if (!p) return {};
+      const opts = hands.me.filter((c) => beats(p.a, c)).sort((a, b) => val(a) - val(b));
+      return opts.length ? { card: opts[0] } : { say: MSG.tipTake };
+    }
+    let tools = null;
+    tools = ctx.tools([{ id: 'hint', icon: '💡', label: MSG.hintBtn, fn: () => {
+      if (busy || taking) return;
+      const s = suggest(); tip = s.card || null;
+      if (s.say) ctx.toast(t(s.say));
+      build();
+    } }]);
+    stage.append(tools);
+    window.__dkdbg = () => ({ busy, attacker, taking, bito, tip, table: table.length, me: hands.me.length, cpu: hands.cpu.length, talon: talon.length });
     if (attacker === 'cpu') busy = true;
     render();
     if (attacker === 'cpu') later(cpuAttack, 1300); else ctx.hint(MSG.attack);

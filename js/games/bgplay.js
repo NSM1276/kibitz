@@ -8,6 +8,7 @@ import { makeView, canFullscreen, toggleFullscreen, phoneLandscape } from './fit
 
 function frame(cb) { let done = false; const go = () => { if (!done) { done = true; cb(performance.now()); } }; requestAnimationFrame(go); setTimeout(go, 40); }
 const MSG = {
+  hintBtn: { en: 'Hint', de: 'Tipp' },
   opening: { en: 'Who starts? Tap the board to throw your die.', de: 'Wer beginnt? Tippe aufs Brett und wirf deinen Würfel.' },
   tie: { en: 'Same number, throw again!', de: 'Gleiche Zahl, nochmal werfen!' },
   youStart: (a, b) => ({ en: `You ${a} : ${b} Computer. You start!`, de: `Du ${a} : ${b} Computer. Du beginnst!` }),
@@ -46,10 +47,11 @@ export function playBackgammon(stage, ctx) {
     <div class="pvar"><button data-v="nard"></button><button data-v="bg"></button></div>
     <div class="phint"></div>
     <div class="pmain"><div class="pcvbox"><canvas class="gcv"></canvas></div>
-      <div class="pside"><button class="btn bundo"></button><button class="btn primary broll"></button></div></div>`;
+      <div class="pside"><button class="btn bundo"></button><button class="btn bhint"></button><button class="btn primary broll"></button></div></div>`;
   stage.append(wrap);
   const $ = (q) => wrap.querySelector(q);
-  const cv = $('canvas'), g = cv.getContext('2d'), hintEl = $('.phint'), undoBtn = $('.bundo'), rollBtn = $('.broll');
+  const cv = $('canvas'), g = cv.getContext('2d'), hintEl = $('.phint'), undoBtn = $('.bundo'), rollBtn = $('.broll'), hintBtn = $('.bhint');
+  hintBtn.textContent = '💡 ' + ctx.t(MSG.hintBtn);
   undoBtn.textContent = '↶ ' + ctx.t(MSG.undo); rollBtn.textContent = '🎲 ' + ctx.t(MSG.rollBtn);
   const view = makeView(cv, BW, BH);
   const bgc = document.createElement('canvas'), bgg = bgc.getContext('2d');
@@ -61,7 +63,7 @@ export function playBackgammon(stage, ctx) {
   const toMine = (p) => (p === 0 || p === 25 ? p : variant === 'nard' ? NR.other(p) : 25 - p);
 
   // phase: opening | roll | move | cpu | over
-  let s, phase, dice, used, seqs, done, history, sel, busy, anim, turn, dobj, first, gen = 0, alive = true;
+  let s, phase, dice, used, seqs, done, history, sel, busy, anim, turn, dobj, first, tipMv = null, gen = 0, alive = true;
   const timers = [];
   const later = (fn, ms) => { const g0 = gen; const id = setTimeout(() => alive && g0 === gen && fn(), ms); timers.push(id); };
 
@@ -219,6 +221,13 @@ export function playBackgammon(stage, ctx) {
       const n = Math.max(0, s.b[p] > 0 ? s.b[p] : 0), x = pointX(p), y = slotY(p, Math.min(n, 5), Math.max(n + 1, 1));
       g.save(); g.setLineDash([4, 3]); g.strokeStyle = `rgba(255,224,120,${0.6 + 0.4 * glow})`; g.lineWidth = 3; g.beginPath(); g.arc(x, y, CR - 1, 0, 7); g.stroke();
       g.setLineDash([]); g.fillStyle = 'rgba(255,224,120,.18)'; g.fill(); g.restore();
+    }
+    if (tipMv && phase === 'move' && !busy) {
+      const [tf, tt] = tipMv, pulseR = CR + 2 + 2 * glow;
+      const ring = (x, y) => { g.save(); g.strokeStyle = '#4fc3ff'; g.lineWidth = 3.5; g.shadowColor = '#4fc3ff'; g.shadowBlur = 10; g.beginPath(); g.arc(x, y, pulseR, 0, 7); g.stroke(); g.restore(); };
+      if (tt === 0) { g.save(); g.strokeStyle = '#4fc3ff'; g.lineWidth = 3.5; g.strokeRect(BOARD + 2, BH / 2 + 4, TRAY - F - 4, BH / 2 - F - 7); g.restore(); }
+      else { const n = Math.max(0, s.b[tt] > 0 ? s.b[tt] : 0); ring(pointX(tt), slotY(tt, Math.min(n, 5), Math.max(n + 1, 1))); }
+      if (sel == null && tf !== 25) { const n = Math.abs(s.b[tf]); if (n) ring(pointX(tf), slotY(tf, n - 1, n)); }
     }
     if (sel != null) {
       const sx = sel === 25 ? BARX : pointX(sel), n = sel === 25 ? s.bar[0] : Math.abs(s.b[sel]);
@@ -408,6 +417,7 @@ export function playBackgammon(stage, ctx) {
   });
   function doMove(o) {
     const before = s, after = E.step(s, o.mv);
+    tipMv = null;
     history.push({ s, sel: o.mv[0] }); done.push(o.mv); used.push(o.d); sel = null; busy = true; renderInfo();
     const wasHit = after.bar[1] > before.bar[1];
     animate(o.mv[0], o.mv[1], true, before, after, () => {
@@ -422,11 +432,27 @@ export function playBackgammon(stage, ctx) {
   }
   undoBtn.onclick = () => {
     if (busy || !done.length || phase !== 'move') return;
+    tipMv = null;
     const h = history.pop(); s = h.s; done.pop(); used.pop(); sel = s.bar[0] ? 25 : null; draw(); say(s.bar[0] ? MSG.bar : MSG.pick);
   };
   rollBtn.onclick = () => (phase === 'opening' ? openingThrow() : roll());
+  // hint: the engine's best play for this roll (from the start of the turn); if you already went another way,
+  // the best next step from where you are
+  hintBtn.onclick = () => {
+    if (busy || turn !== 'me' || phase !== 'move') return;
+    const opts = nextOptions(); if (!opts.length) return;
+    const s0 = history.length ? history[0].s : s;
+    const play = E.bestPlay(s0, dice, 2, first.me);
+    const k = done.length, st = play && play.steps;
+    let mv = null;
+    if (st && st[k] && done.every((d, i) => st[i] && st[i][0] === d[0] && st[i][1] === d[1])) mv = st[k];
+    if (!mv || !opts.some((o) => o.mv[0] === mv[0] && o.mv[1] === mv[1])) mv = opts[0].mv;
+    tipMv = mv; ctx.sfx.tap();
+    if (s.bar[0] && mv[0] !== 25) tipMv = opts[0].mv;
+    draw();
+  };
   function endMyTurn() {
-    first.me = false; dice = []; used = []; done = []; seqs = []; sel = null; turn = 'cpu'; phase = 'cpu'; busy = true;
+    tipMv = null; first.me = false; dice = []; used = []; done = []; seqs = []; sel = null; turn = 'cpu'; phase = 'cpu'; busy = true;
     later(() => { dobj = []; draw(); later(cpuTurn, 250); }, 450);
     draw();
   }
@@ -466,14 +492,14 @@ export function playBackgammon(stage, ctx) {
   }
   function newGame() {
     gen++;
-    s = E.start(); phase = 'opening'; dice = []; used = []; seqs = []; done = []; history = []; sel = null; busy = false; anim = null;
+    s = E.start(); phase = 'opening'; dice = []; used = []; seqs = []; done = []; history = []; sel = null; busy = false; anim = null; tipMv = null;
     turn = 'me'; dobj = []; first = { me: true, cpu: true };
     say(MSG.opening); draw();
   }
 
   newGame(); layout(); pulse();
   if (window.innerWidth < 700) later(() => window.scrollTo(0, wrap.getBoundingClientRect().top + window.scrollY - 4), 120);
-  window.__bgdbg = () => ({ s, dice, turn, busy, done, sel, phase, variant, rot: view.rot, opts: phase === 'move' ? nextOptions().map((o) => o.mv) : [] });
+  window.__bgdbg = () => ({ tip: tipMv, s, dice, turn, busy, done, sel, phase, variant, rot: view.rot, opts: phase === 'move' ? nextOptions().map((o) => o.mv) : [] });
   window.__bgxy = (p) => { const x = p === 25 ? BARX : p === 0 ? BOARD + 12 : pointX(p), y = p === 0 ? BH * 0.75 : p === 25 ? BH / 2 - 24 : isTop(p) ? F + 40 : BH - F - 40;
     const r = cv.getBoundingClientRect(); return view.rot ? [r.left + (BH - y) * view.s, r.top + x * view.s] : [r.left + x * view.s, r.top + y * view.s]; };
   return () => {

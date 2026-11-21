@@ -356,3 +356,44 @@ canvas.gcv { display: block; border-radius: 12px; box-shadow: 0 14px 30px #000a;
 .pgame.side .pside { width: 108px; flex: 0 0 108px; align-items: stretch; }
 .pgame.side .ppow, .pgame.side .proll { align-self: stretch; min-height: 140px; }
 .pgame.side .ppow span { display: none; }
+
+/* game tool bar: round buttons with an icon over a short label */
+.gbar { display: flex; justify-content: center; gap: 8px; margin: 12px auto 0; max-width: 520px; }
+.gtool { flex: 1 1 0; max-width: 110px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px 7px; border-radius: 14px; cursor: pointer;
+  border: 1px solid rgba(255, 236, 200, .18); background: rgba(14, 9, 5, .62); color: #fff6e2; font: 800 13px var(--ui); box-shadow: 0 3px 8px #0006;
+  transition: transform .15s cubic-bezier(.3,1.6,.5,1), opacity .2s; }
+.gtool i { font-style: normal; font-size: 21px; line-height: 1; }
+.gtool:active { transform: scale(.93); }
+.gtool:disabled { opacity: .35; cursor: default; }
+.gtool.on { background: #d9ac5c; color: #2a1608; border-color: #f3d48a; }
+/* result panel stats */
+.stats { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.sti { flex: 1 1 52px; text-align: center; padding: 6px 4px; border-radius: 10px; background: #0000000d; border: 1px solid #0000001a; }
+.sti b { display: block; font: 900 20px/1.1 var(--ui); }
+.sti span { font: 700 11.5px var(--ui); color: var(--ink2); }
+.sti.w b { color: var(--ok); } .sti.l b { color: var(--bad); } .sti.s b { color: #c27a00; }
+.fbest { margin-top: 8px; font: 900 16px var(--ui); color: #c25a00; }
+/* chess: captured pieces + material, promotion picker */
+.capt { display: flex; align-items: center; min-height: 26px; gap: 0; padding: 0 2px; }
+.capt i { width: 22px; height: 22px; margin-right: -7px; background-size: 100%; filter: drop-shadow(0 1px 1px #0008); }
+.capt b { margin-left: 12px; font: 900 15px var(--ui); color: #fff6e2; text-shadow: 0 1px 2px #000a; }
+.promo { position: absolute; inset: 0; z-index: 20; background: #0007; animation: fbfade .15s ease-out; }
+.promocol { position: absolute; top: 0; width: 12.5%; display: flex; flex-direction: column; background: #fdfaf1; border-radius: 6px; box-shadow: 0 8px 24px #000c; overflow: hidden; animation: fbpop .25s cubic-bezier(.3,1.5,.5,1); }
+.promocol button { aspect-ratio: 1; border: 0; background: center/86% no-repeat; cursor: pointer; }
+.promocol button:active { background-color: #d9ac5c66; }
+.capt .ckmini { width: 18px; height: 18px; border-radius: 50%; margin-right: -6px; box-shadow: 0 1px 2px #000a, inset 0 0 0 3px #0002; background-image: none; }
+.capt .ckmini.w { background: radial-gradient(circle at 40% 35%, #fffaf0, #d6c39c); }
+.capt .ckmini.b { background: radial-gradient(circle at 40% 35%, #8a3a2a, #3e130c); }
+.board .sq.tipsq { box-shadow: inset 0 0 0 4px #4fc3ff, inset 0 0 18px #4fc3ffaa; animation: hintpulse 1s ease-in-out infinite; }
+/* durak: cpu card count, discard pile, hint */
+.dk-top { display: flex; align-items: center; gap: 6px; }
+.dk-top .dk-opp { flex: 1; min-width: 0; }
+.dk-cnt { flex: none; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 15px; background: #0b2a1a; color: #fff; font: 800 15px/30px var(--ui); text-align: center; box-shadow: inset 0 0 0 2px #ffffff33; }
+.dk-cnt.few { background: #b3261e; animation: hintpulse 1s ease-in-out infinite; }
+.dk-bito { flex: none; position: relative; width: 46px; height: 58px; }
+.dk-bito i { position: absolute; left: 6px; top: 4px; width: 34px; height: 50px; border-radius: 4px; background: repeating-linear-gradient(45deg, #7a1f1f 0 4px, #8f2a2a 4px 8px); border: 2px solid #f3ead8; box-shadow: 0 1px 3px #0008; }
+.dk-bito i:nth-child(1) { transform: rotate(-14deg); } .dk-bito i:nth-child(2) { transform: rotate(6deg); } .dk-bito i:nth-child(3) { transform: rotate(-3deg); }
+.dk-bito b { position: absolute; right: -2px; bottom: -4px; min-width: 22px; height: 22px; border-radius: 11px; background: #f3ead8; color: #2a170b; font: 800 12px/22px var(--ui); text-align: center; box-shadow: 0 1px 3px #0008; }
+.dk-hand .card.tip { box-shadow: 0 0 0 3px #4fc3ff, 0 0 16px #4fc3ff; transform: translateY(-12px); animation: dktip 1s ease-in-out infinite; }
+@keyframes dktip { 0%,100% { transform: translateY(-8px); } 50% { transform: translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) { .dk-hand .card.tip, .dk-cnt.few { animation: none; } }
