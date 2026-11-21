@@ -4,16 +4,13 @@
 // Phone-first: the table fills the screen, turns sideways in landscape, and you shoot by pulling the power bar.
 import { simulate, aimFor, firstContact, POCKETS, W, H, R } from './poolphys.js';
 import { makeView, canFullscreen, toggleFullscreen, phoneLandscape } from './fitview.js';
+import { makeArt, M, TW, TH, color } from './poolart.js';
 
-const M = 28, CUSH = 9; // rail width around the playing area, cushion rubber inside it
-const TW = W + 2 * M, TH = H + 2 * M;
 function frame(cb) { let done = false; const go = () => { if (!done) { done = true; cb(performance.now()); } }; requestAnimationFrame(go); setTimeout(go, 34); }
-const COL = { 1: '#f5c400', 2: '#1747c9', 3: '#d8232a', 4: '#5b2a9e', 5: '#f07a12', 6: '#0c8a43', 7: '#86201d', 8: '#141414' };
-const color = (n) => (n === 0 ? '#f7f4ea' : COL[n > 8 ? n - 8 : n]);
 const groupOf = (n) => (n >= 1 && n <= 7 ? 'solid' : n >= 9 ? 'stripe' : null);
 const MSG = {
-  break: { en: 'Your break! Aim on the table, pull the bar, let go.', de: 'Dein Anstoß! Zielen, Balken ziehen, loslassen.' },
-  aim: { en: 'Your shot. Aim on the table, pull the bar and let go.', de: 'Du bist dran. Zielen, Balken ziehen, loslassen.' },
+  break: { en: 'Your break! Drag to aim, ‹ wheel › for fine aim, pull the bar to shoot.', de: 'Dein Anstoß! Ziehen zum Zielen, ‹ Rad › zum Feinzielen, Balken ziehen zum Stoßen.' },
+  aim: { en: 'Your shot. Drag to aim, ‹ wheel › for fine aim.', de: 'Du bist dran. Ziehen zum Zielen, ‹ Rad › fein.' },
   inHand: { en: 'Ball in hand: move the white ball, then aim.', de: 'Freie Lage: Schieb die Weiße, dann ziele.' },
   cpu: { en: 'Computer is playing…', de: 'Der Computer spielt…' },
   pull: { en: 'pull & release', de: 'ziehen & loslassen' },
@@ -44,8 +41,6 @@ function rack() {
   return balls;
 }
 
-// seeded noise so the felt and wood grain look the same every time
-function rng(seed) { return () => ((seed = (seed * 16807) % 2147483647) / 2147483647); }
 
 export function playPool(stage, ctx) {
   const app = document.getElementById('app');
@@ -57,9 +52,8 @@ export function playPool(stage, ctx) {
     <div class="pmain"><div class="pcvbox"><canvas class="gcv"></canvas></div>
       <div class="pside">
         <div class="pspinw"><div class="pspin"><i></i></div><span></span></div>
-        <button class="pico pfine" data-n="-1">◀</button>
         <div class="ppow"><div class="pfill"></div><div class="pcue"></div><span></span></div>
-        <button class="pico pfine" data-n="1">▶</button>
+        <div class="proll" title="fine aim"><i></i></div>
       </div></div>`;
   stage.append(wrap);
   const $ = (s) => wrap.querySelector(s);
@@ -88,11 +82,11 @@ export function playPool(stage, ctx) {
     let sUp = 0, sSide, side;
     if (fs) { // phone sideways: players + hint in a left column, so the table gets the full height
       const lw = $('.ptop').offsetWidth || 150;
-      sSide = view.fit(true, wrap.clientWidth - lw - 108 - 20, wrap.clientHeight - 10); side = true;
+      sSide = view.fit(true, wrap.clientWidth - lw - 116 - 20, wrap.clientHeight - 10); side = true;
     } else {
       const top = $('.ptop').offsetHeight + hintEl.offsetHeight + 8;
       const W0 = wrap.clientWidth, H0 = window.innerHeight - 16 - top;
-      sUp = view.fit(false, W0, H0 - 70); sSide = view.fit(true, W0 - 108, H0);
+      sUp = view.fit(false, W0, H0 - 70); sSide = view.fit(true, W0 - 116, H0);
       side = sSide > sUp * 1.05;
     }
     wrap.classList.toggle('side', side);
@@ -118,12 +112,36 @@ export function playPool(stage, ctx) {
     e.preventDefault(); const r = spinEl.getBoundingClientRect(), y = (e.clientY - r.top) / r.height;
     setSpin(y < 0.36 ? 1 : y > 0.64 ? -1 : 0); ctx.sfx.tap();
   });
-  wrap.querySelectorAll('.pfine').forEach((b) => {
-    let iv = null, to = null; const d = +b.dataset.n * 0.12 * Math.PI / 180;
-    const stop = () => { clearTimeout(to); clearInterval(iv); };
-    b.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!myTurn()) return; angle += d; draw(); to = setTimeout(() => { iv = setInterval(() => { angle += d; draw(); }, 45); }, 280); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
+  // fine-aim roller (like a thumb wheel): slide along it to turn the cue very slowly; tap an end to nudge
+  const rollEl = $('.proll'), ribs = $('.proll i');
+  let rollDrag = null, ribOff = 0, tickAcc = 0;
+  const FINE = 0.035 * Math.PI / 180; // radians per pixel
+  const turnBy = (px) => {
+    angle += px * FINE; ribOff += px; ribs.style.backgroundPosition = wrap.classList.contains('side') ? `0 ${ribOff}px` : `${ribOff}px 0`;
+    tickAcc += Math.abs(px); if (tickAcc > 14) { tickAcc = 0; ctx.sfx.diceTick(0.12); }
+    draw();
+  };
+  rollEl.addEventListener('pointerdown', (e) => {
+    if (!myTurn()) return; e.preventDefault();
+    try { rollEl.setPointerCapture(e.pointerId); } catch {}
+    rollDrag = { x: e.clientX, y: e.clientY, moved: 0 };
   });
+  rollEl.addEventListener('pointermove', (e) => {
+    if (!rollDrag || !myTurn()) return;
+    const vert = wrap.classList.contains('side'), d = vert ? e.clientY - rollDrag.y : e.clientX - rollDrag.x;
+    rollDrag.x = e.clientX; rollDrag.y = e.clientY; rollDrag.moved += Math.abs(d);
+    if (d) turnBy(d);
+  });
+  rollEl.addEventListener('pointerup', (e) => {
+    if (!rollDrag) return;
+    if (rollDrag.moved < 4 && myTurn()) { // a tap: nudge 0.1° towards that end
+      const r = rollEl.getBoundingClientRect(), vert = wrap.classList.contains('side');
+      const k = vert ? (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width;
+      turnBy((k < 0.5 ? -1 : 1) * (0.1 * Math.PI / 180) / FINE); ctx.sfx.tap();
+    }
+    rollDrag = null;
+  });
+  rollEl.addEventListener('pointercancel', () => { rollDrag = null; });
   // power bar: press, pull along the bar, let go = shoot (pull back to the start to cancel)
   function showPower() {
     const vert = wrap.classList.contains('side');
@@ -152,19 +170,32 @@ export function playPool(stage, ctx) {
 
   // ---------- table input ----------
   const toTable = (e) => { const p = view.toLocal(e); return [p[0] - M, p[1] - M]; };
-  let drag = null;
+  // tap on the table = point the cue there; drag = turn the cue around the white ball (no jump, finger never
+  // has to cover the target); the further from the ball you drag, and the slower, the finer it turns
+  let drag = null, aimDrag = null;
+  const around = (p) => { const c = cue(); return Math.atan2(p[1] - c.y, p[0] - c.x); };
   cv.addEventListener('pointerdown', (e) => {
     if (!myTurn()) return;
     const p = toTable(e), c = cue();
     try { cv.setPointerCapture(e.pointerId); } catch {}
-    if (inHand && Math.hypot(p[0] - c.x, p[1] - c.y) < 3.2 * R) drag = 'cue'; else { drag = 'aim'; aimAt(p); }
+    if (inHand && Math.hypot(p[0] - c.x, p[1] - c.y) < 3.2 * R) drag = 'cue';
+    else { drag = 'aim'; aimDrag = { sx: e.clientX, sy: e.clientY, pa: around(p), moved: false }; }
   });
   cv.addEventListener('pointermove', (e) => {
     if (!drag || !myTurn()) return;
     const p = toTable(e);
-    if (drag === 'cue') placeCue(p[0], p[1]); else aimAt(p);
+    if (drag === 'cue') return placeCue(p[0], p[1]);
+    if (!aimDrag.moved && Math.hypot(e.clientX - aimDrag.sx, e.clientY - aimDrag.sy) < 6) return;
+    aimDrag.moved = true;
+    const c = cue(), dist = Math.hypot(p[0] - c.x, p[1] - c.y), pa = around(p);
+    let da = pa - aimDrag.pa; da = Math.atan2(Math.sin(da), Math.cos(da)); aimDrag.pa = pa;
+    if (dist < 2 * R) return;
+    angle += da * Math.min(1, Math.max(0.3, dist / 220)); draw();
   });
-  cv.addEventListener('pointerup', () => { drag = null; });
+  cv.addEventListener('pointerup', (e) => {
+    if (drag === 'aim' && aimDrag && !aimDrag.moved && myTurn()) aimAt(toTable(e));
+    drag = null; aimDrag = null;
+  });
   function aimAt(p) { const c = cue(); if (Math.hypot(p[0] - c.x, p[1] - c.y) < 4) return; angle = Math.atan2(p[1] - c.y, p[0] - c.x); draw(); }
   function freeSpot(x, y) {
     x = Math.min(W - R, Math.max(R, x)); y = Math.min(H - R, Math.max(R, y));
@@ -172,127 +203,9 @@ export function playPool(stage, ctx) {
   }
   function placeCue(x, y) { const s = freeSpot(x, y); if (s) { const c = cue(); c.x = s[0]; c.y = s[1]; draw(); } }
 
-  // ---------- static table (painted once per size) ----------
-  function paintTable() {
-    bg.width = cv.width; bg.height = cv.height;
-    const q = bgg; view.apply(q);
-    const rnd = rng(7);
-    // walnut rail with grain
-    const wood = q.createLinearGradient(0, 0, TW, 0);
-    wood.addColorStop(0, '#4b2812'); wood.addColorStop(0.18, '#6d3c1c'); wood.addColorStop(0.5, '#7d4822'); wood.addColorStop(0.82, '#6d3c1c'); wood.addColorStop(1, '#4b2812');
-    q.fillStyle = wood; q.beginPath(); q.roundRect(0, 0, TW, TH, 20); q.fill();
-    q.save(); q.beginPath(); q.roundRect(0, 0, TW, TH, 20); q.clip();
-    for (let i = 0; i < 46; i++) {
-      const x = rnd() * TW; q.strokeStyle = rnd() < 0.5 ? 'rgba(0,0,0,.13)' : 'rgba(255,220,170,.06)'; q.lineWidth = 0.6 + rnd() * 1.6;
-      q.beginPath(); q.moveTo(x, 0); q.bezierCurveTo(x + 6 - rnd() * 12, TH * 0.33, x + 6 - rnd() * 12, TH * 0.66, x + 4 - rnd() * 8, TH); q.stroke();
-    }
-    q.restore();
-    // outer bevel highlight + inner dark edge
-    q.strokeStyle = 'rgba(255,230,190,.28)'; q.lineWidth = 2; q.beginPath(); q.roundRect(1.5, 1.5, TW - 3, TH - 3, 19); q.stroke();
-    q.strokeStyle = 'rgba(0,0,0,.55)'; q.lineWidth = 3; q.strokeRect(M - CUSH - 1.5, M - CUSH - 1.5, W + 2 * CUSH + 3, H + 2 * CUSH + 3);
-    // cushions
-    q.fillStyle = '#0f5634'; q.fillRect(M - CUSH, M - CUSH, W + 2 * CUSH, H + 2 * CUSH);
-    // felt + fine noise
-    const felt = q.createRadialGradient(M + W / 2, M + H / 2, 30, M + W / 2, M + H / 2, H * 0.62);
-    felt.addColorStop(0, '#23985f'); felt.addColorStop(1, '#167246');
-    q.fillStyle = felt; q.fillRect(M, M, W, H);
-    for (let i = 0; i < 2600; i++) { q.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,.07)' : 'rgba(255,255,255,.05)'; q.fillRect(M + rnd() * W, M + rnd() * H, 1.2, 1.2); }
-    // cushion nose shading
-    q.strokeStyle = 'rgba(0,0,0,.35)'; q.lineWidth = 2; q.strokeRect(M + 1, M + 1, W - 2, H - 2);
-    q.strokeStyle = 'rgba(120,220,160,.35)'; q.lineWidth = 1.2; q.strokeRect(M - 0.6, M - 0.6, W + 1.2, H + 1.2);
-    // head string + foot spot
-    q.strokeStyle = 'rgba(255,255,255,.16)'; q.lineWidth = 1.2; q.beginPath(); q.moveTo(M, M + H * 0.75); q.lineTo(M + W, M + H * 0.75); q.stroke();
-    q.fillStyle = 'rgba(255,255,255,.35)'; q.beginPath(); q.arc(M + W / 2, M + H * 0.25, 2.2, 0, 7); q.fill();
-    // pearl diamonds on the rails
-    const dia = (x, y) => { q.save(); q.translate(x, y); q.rotate(Math.PI / 4); const gr = q.createLinearGradient(-3, -3, 3, 3); gr.addColorStop(0, '#fffaf0'); gr.addColorStop(1, '#c9b48a'); q.fillStyle = gr; q.fillRect(-2.6, -2.6, 5.2, 5.2); q.restore(); };
-    const rm = (M - CUSH) / 2;
-    for (let i = 1; i < 4; i++) for (const y of [rm, TH - rm]) dia(M + (W * i) / 4, y);
-    for (let i = 1; i < 8; i++) { if (i === 4) continue; for (const x of [rm, TW - rm]) dia(x, M + (H * i) / 8); }
-    // pockets: cut through cushion, dark hole, leather rim
-    POCKETS.forEach(([px, py], i) => {
-      const side = i === 2 || i === 3, r = side ? 16 : 19, x = M + px + (side ? (px ? 4 : -4) : 0), y = M + py;
-      q.fillStyle = '#2a170b'; q.beginPath(); q.arc(x, y, r + 5, 0, 7); q.fill();
-      const ho = q.createRadialGradient(x, y, 2, x, y, r); ho.addColorStop(0, '#000'); ho.addColorStop(0.75, '#070707'); ho.addColorStop(1, '#262626');
-      q.fillStyle = ho; q.beginPath(); q.arc(x, y, r, 0, 7); q.fill();
-      q.strokeStyle = 'rgba(255,220,170,.22)'; q.lineWidth = 1.4; q.beginPath(); q.arc(x, y, r + 4, 0, 7); q.stroke();
-    });
-  }
-
-  // ---------- dynamic drawing ----------
-  // rolling: each ball keeps a roll phase (distance / radius) and the direction it last rolled in
-  const roll = new Map();
-  function rollTo(n, x, y) {
-    const r = roll.get(n);
-    if (!r) { roll.set(n, { x, y, ph: 0, ux: 1, uy: 0 }); return; }
-    const dx = x - r.x, dy = y - r.y, d = Math.hypot(dx, dy);
-    if (d > 0.01) { r.ux = dx / d; r.uy = dy / d; r.ph += d / R; }
-    r.x = x; r.y = y;
-  }
-  function ballAt(x, y, n, alpha = 1, scale = 1, dark = 0) {
-    g.save(); g.globalAlpha = alpha; g.translate(M + x, M + y); if (scale !== 1) g.scale(scale, scale);
-    g.save(); if (view.rot) g.rotate(-Math.PI / 2);
-    g.fillStyle = 'rgba(0,0,0,.38)'; g.beginPath(); g.ellipse(2.4, 3.4, R * 1.02, R * 0.9, 0, 0, 7); g.fill();
-    g.restore();
-    const base = color(n), rs = roll.get(n) || { ph: 0, ux: 1, uy: 0 };
-    // markings slide across the ball and foreshorten as it turns (numbers sit on two opposite sides)
-    const sn = Math.sin(rs.ph), cs = Math.cos(rs.ph), ang = Math.atan2(rs.uy, rs.ux), fore = 0.5 + 0.5 * Math.abs(cs); // never fully edge-on, so stripes and numbers stay readable
-    g.save(); g.beginPath(); g.arc(0, 0, R, 0, 7); g.clip();
-    if (n > 8) {
-      g.fillStyle = '#f7f4ea'; g.fillRect(-R, -R, 2 * R, 2 * R);
-      // the coloured band turns with the ball
-      g.save(); g.rotate(ang); g.translate(sn * R * 0.45, 0); g.scale(fore, 1); g.fillStyle = base; g.fillRect(-R * 0.56, -R * 1.2, R * 1.12, R * 2.4); g.restore();
-    } else { g.fillStyle = base; g.fillRect(-R, -R, 2 * R, 2 * R); }
-    if (n) {
-      g.save(); g.rotate(ang); g.translate(sn * R * 0.42, 0); g.scale(fore, 1); g.rotate(-ang);
-      if (view.rot) g.rotate(-Math.PI / 2);
-      g.fillStyle = '#fbf8ee'; g.beginPath(); g.arc(0, 0, R * 0.5, 0, 7); g.fill();
-      g.fillStyle = '#151515'; g.font = `bold ${n > 9 ? R * 0.62 : R * 0.74}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n, 0, 0.6);
-      g.restore();
-    }
-    g.restore();
-    if (view.rot) g.rotate(-Math.PI / 2);
-    const sh = g.createRadialGradient(-R * 0.38, -R * 0.42, R * 0.05, 0, 0, R * 1.05);
-    sh.addColorStop(0, 'rgba(255,255,255,.55)'); sh.addColorStop(0.28, 'rgba(255,255,255,.07)'); sh.addColorStop(0.72, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.45)');
-    g.fillStyle = sh; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.ellipse(-R * 0.4, -R * 0.46, R * 0.2, R * 0.13, -0.6, 0, 7); g.fill();
-    if (dark) { g.fillStyle = `rgba(0,0,0,${dark})`; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill(); }
-    g.restore();
-  }
-  // tapered cue: tip, white ferrule, maple shaft, dark butt with a brass ring
-  function cueStick(c, a, pull) {
-    const dx = Math.cos(a), dy = Math.sin(a), nx = -dy, ny = dx, back = R + 4 + pull, len = 330;
-    const at = (t) => [M + c.x - dx * (back + t * len), M + c.y - dy * (back + t * len)];
-    const wid = (t) => 2.3 + t * 3.4; // half width
-    const seg = (t0, t1, fill) => {
-      const [x0, y0] = at(t0), [x1, y1] = at(t1), w0 = wid(t0), w1 = wid(t1);
-      g.fillStyle = fill; g.beginPath();
-      g.moveTo(x0 + nx * w0, y0 + ny * w0); g.lineTo(x1 + nx * w1, y1 + ny * w1); g.lineTo(x1 - nx * w1, y1 - ny * w1); g.lineTo(x0 - nx * w0, y0 - ny * w0); g.closePath(); g.fill();
-    };
-    g.save();
-    g.translate(4, 6); g.globalAlpha = 0.35; seg(0, 1, '#000'); g.globalAlpha = 1; g.translate(-4, -6);
-    const [sx, sy] = at(0.05), [ex, ey] = at(0.6);
-    const maple = g.createLinearGradient(sx + nx * 3, sy + ny * 3, sx - nx * 3, sy - ny * 3);
-    maple.addColorStop(0, '#f6e2b8'); maple.addColorStop(0.5, '#e2bf82'); maple.addColorStop(1, '#b58a4f');
-    const butt = g.createLinearGradient(ex + nx * 6, ey + ny * 6, ex - nx * 6, ey - ny * 6);
-    butt.addColorStop(0, '#5a2d14'); butt.addColorStop(0.5, '#2e140a'); butt.addColorStop(1, '#150904');
-    seg(0, 0.012, '#2f6fb3'); seg(0.012, 0.045, '#f4f1ea'); seg(0.045, 0.6, maple); seg(0.6, 0.62, '#d9ac5c'); seg(0.62, 0.97, butt); seg(0.97, 1, '#0b0b0b');
-    g.restore();
-  }
-  // thick line with a dark outline so it reads on any felt and on small screens
-  function line(x0, y0, x1, y1, col, w, dash) {
-    g.save(); g.lineCap = 'round'; if (dash) g.setLineDash(dash);
-    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = w + 2.2; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
-    g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); g.restore();
-  }
-  function ring(x, y, r, col, w, fill) {
-    g.save(); if (fill) { g.fillStyle = fill; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
-    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = w + 2.2; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke();
-    g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); g.restore();
-  }
-  function arrowHead(x, y, a, col) {
-    g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = col; g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(7, 0); g.lineTo(-5, -6); g.lineTo(-5, 6); g.closePath(); g.stroke(); g.fill(); g.restore();
-  }
+  const art = makeArt(g, view);
+  const { rollTo, ballAt, cueStick, line, ring, arrowHead } = art;
+  const paintTable = () => art.paintTable(bg, cv);
   // distance from the cue ball to the cushion along the aim
   function toWall(c, a) {
     const dx = Math.cos(a), dy = Math.sin(a); let t = 1e9;
