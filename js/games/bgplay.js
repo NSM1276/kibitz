@@ -145,8 +145,9 @@ export function playBackgammon(stage, ctx) {
   // ---------- dynamic ----------
   function checker(x, y, mine, ring, lift) {
     g.save();
-    if (lift) y -= 0;
-    g.fillStyle = 'rgba(0,0,0,.42)'; g.beginPath(); g.arc(x + (lift ? 3.5 : 1.6), y + (lift ? 5 : 2.6), CR, 0, 7); g.fill();
+    // a lifted checker (being carried) is a bit bigger and casts its shadow further away
+    if (lift) { g.fillStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.arc(x + 6, y + 8, CR * 1.04, 0, 7); g.fill(); g.translate(x, y); g.scale(1.1, 1.1); g.translate(-x, -y); }
+    else { g.fillStyle = 'rgba(0,0,0,.42)'; g.beginPath(); g.arc(x + 1.6, y + 2.6, CR, 0, 7); g.fill(); }
     const gr = g.createRadialGradient(x - 4, y - 5, 1, x, y, CR);
     if (mine) { gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.7, '#ece5d3'); gr.addColorStop(1, '#bfb59c'); }
     else { gr.addColorStop(0, '#d65a40'); gr.addColorStop(0.7, '#9c2c1b'); gr.addColorStop(1, '#5e170c'); }
@@ -268,12 +269,13 @@ export function playBackgammon(stage, ctx) {
     s = after;
     const nTo = to === 0 ? 1 : Math.abs(after.b[to]);
     const [x1, y1] = to === 0 ? coords(0, mine, 0) : [pointX(to), slotY(to, nTo - 1, nTo)];
-    const t0 = performance.now(), T = 380;
+    // ease in-out slide with a small arc; longer trips take a little longer and arc higher
+    const dist = Math.hypot(x1 - x0, y1 - y0), t0 = performance.now(), T = 240 + Math.min(160, dist * 0.35), arc = Math.min(34, 10 + dist * 0.08);
     anim = { to: to === 0 ? -99 : to, mine, x: x0, y: y0 };
     const stepF = (tm) => {
       if (!alive || g0 !== gen) return;
-      const k = Math.min(1, (tm - t0) / T), e = 1 - Math.pow(1 - k, 3);
-      anim.x = x0 + (x1 - x0) * e; anim.y = y0 + (y1 - y0) * e - Math.sin(k * Math.PI) * 30;
+      const k = Math.min(1, (tm - t0) / T), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      anim.x = x0 + (x1 - x0) * e; anim.y = y0 + (y1 - y0) * e - Math.sin(k * Math.PI) * arc;
       draw();
       if (k < 1) frame(stepF); else { anim = null; to === 0 ? ctx.sfx.move() : ctx.sfx.checker(); draw(); cb && cb(); }
     };
@@ -390,29 +392,34 @@ export function playBackgammon(stage, ctx) {
     const opts = nextOptions();
     if (sel != null) {
       const o = opts.find((x) => x.mv[0] === sel && x.mv[1] === p);
-      if (o) {
-        const before = s, after = E.step(s, o.mv);
-        history.push({ s, sel }); done.push(o.mv); used.push(o.d); sel = null; busy = true; renderInfo();
-        const wasHit = after.bar[1] > before.bar[1];
-        animate(o.mv[0], o.mv[1], true, before, after, () => {
-          if (wasHit) ctx.sfx.capture();
-          busy = false;
-          if (s.off[0] === 15) return finish(true);
-          if (!nextOptions().length) return endMyTurn();
-          say(s.bar[0] ? MSG.bar : MSG.pick);
-          if (s.bar[0]) sel = 25;
-          draw();
-        });
-        return;
-      }
+      if (o) return doMove(o);
       if (variant === 'nard' && p !== sel && p >= 1 && s.b[p] < 0) { ctx.toast(ctx.t(MSG.blocked), 2200); }
     }
     const canFrom = opts.some((x) => x.mv[0] === p);
     if (!canFrom && variant === 'nard' && p === 24 && s.b[24] > 0 && done.some((m) => m[0] === 24)) ctx.toast(ctx.t(MSG.headOnce), 2800);
     sel = canFrom ? (sel === p ? null : p) : null;
-    if (sel != null) ctx.sfx.tap();
+    if (sel != null) {
+      // only one place this checker can go: move it straight away (undo is there if it was a slip)
+      const dest = [...new Set(opts.filter((x) => x.mv[0] === sel).map((x) => x.mv[1]))];
+      if (dest.length === 1) return doMove(opts.find((x) => x.mv[0] === sel));
+      ctx.sfx.tap();
+    }
     draw();
   });
+  function doMove(o) {
+    const before = s, after = E.step(s, o.mv);
+    history.push({ s, sel: o.mv[0] }); done.push(o.mv); used.push(o.d); sel = null; busy = true; renderInfo();
+    const wasHit = after.bar[1] > before.bar[1];
+    animate(o.mv[0], o.mv[1], true, before, after, () => {
+      if (wasHit) ctx.sfx.capture();
+      busy = false;
+      if (s.off[0] === 15) return finish(true);
+      if (!nextOptions().length) return endMyTurn();
+      say(s.bar[0] ? MSG.bar : MSG.pick);
+      if (s.bar[0]) sel = 25;
+      draw();
+    });
+  }
   undoBtn.onclick = () => {
     if (busy || !done.length || phase !== 'move') return;
     const h = history.pop(); s = h.s; done.pop(); used.pop(); sel = s.bar[0] ? 25 : null; draw(); say(s.bar[0] ? MSG.bar : MSG.pick);

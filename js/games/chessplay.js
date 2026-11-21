@@ -23,7 +23,7 @@ const TRAPS = traps.map((tr) => {
 
 export function playChess(stage, ctx) {
   const game = new Chess();
-  const board = document.createElement('div'); board.className = 'board';
+  const board = document.createElement('div'); board.className = 'board drag-ok';
   stage.append(board);
   const sqEls = {}, pieceEls = new Map();
   let sel = null, busy = false, alive = true, lastMove = null;
@@ -65,24 +65,30 @@ export function playChess(stage, ctx) {
       }
     }
   }
-  function doMove(m) {
+  function doMove(m, dropped = false) {
     const res = game.move(m);
     const el = pieceEls.get(res.from), victim = pieceEls.get(res.to);
     if (victim) { victim.style.opacity = '0'; pieceEls.delete(res.to); setTimeout(() => victim.remove(), 250); }
     if (res.flags.includes('e')) { const cs = res.to[0] + res.from[1], v = pieceEls.get(cs); if (v) { v.remove(); pieceEls.delete(cs); } }
-    if (el) { pieceEls.delete(res.from); pieceEls.set(res.to, el); const [x, y] = xy(res.to); el.style.left = x + '%'; el.style.top = y + '%'; }
+    if (el) {
+      pieceEls.delete(res.from); pieceEls.set(res.to, el); const [x, y] = xy(res.to);
+      if (dropped) { el.style.transition = 'none'; el.style.transform = ''; el.classList.remove('drag'); }
+      el.style.left = x + '%'; el.style.top = y + '%';
+      if (dropped) { void el.offsetWidth; el.style.transition = ''; }
+    }
     if (res.flags.includes('k') || res.flags.includes('q')) {
       const r = res.from[1], rf = res.flags.includes('k') ? 'h' : 'a', rt = res.flags.includes('k') ? 'f' : 'd', rk = pieceEls.get(rf + r);
       if (rk) { pieceEls.delete(rf + r); pieceEls.set(rt + r, rk); const [x, y] = xy(rt + r); rk.style.left = x + '%'; rk.style.top = y + '%'; }
     }
     lastMove = res;
     setTimeout(() => alive && drawPieces(), 340);
-    res.captured ? ctx.sfx.capture() : ctx.sfx.move();
+    if (game.inCheck() && !game.isCheckmate()) { res.captured ? ctx.sfx.capture() : ctx.sfx.move(); setTimeout(() => alive && ctx.sfx.check(), 90); }
+    else res.captured ? ctx.sfx.capture() : ctx.sfx.move();
     highlights();
     return res;
   }
   function onSquare(sq) {
-    if (busy || game.turn() !== 'w') return;
+    if (busy || game.turn() !== 'w' || justDragged) return;
     const p = game.get(sq);
     if (sel && sel !== sq) {
       const legal = game.moves({ square: sel, verbose: true }).find((m) => m.to === sq);
@@ -107,6 +113,8 @@ export function playChess(stage, ctx) {
   function after() {
     if (over()) return;
     busy = true; ctx.hint(MSG.think);
+    // a human-like pause: quick when there is only one reply, longer otherwise
+    const n = game.moves().length, wait = n <= 1 ? 250 : 450 + Math.random() * 450;
     later(() => {
       const m = bestMove(game, ctx.level);
       doMove(m);
@@ -116,8 +124,56 @@ export function playChess(stage, ctx) {
         const note = trapNote();
         if (note) { ctx.hint(note); ctx.toast(ctx.t(note), 3200); } else ctx.hint(game.inCheck() ? MSG.check : MSG.you);
       }, 360);
-    }, 250);
+    }, wait);
   }
+
+  // ----- drag a piece with the finger or mouse (a tap still selects; drag starts after a few pixels) -----
+  let drag = null, justDragged = false;
+  const sqAt = (e) => {
+    const r = board.getBoundingClientRect(), f = Math.floor(((e.clientX - r.left) / r.width) * 8), rk = 8 - Math.floor(((e.clientY - r.top) / r.height) * 8);
+    return f >= 0 && f < 8 && rk >= 1 && rk <= 8 ? FILES[f] + rk : null;
+  };
+  board.addEventListener('pointerdown', (e) => {
+    if (busy || game.turn() !== 'w' || e.button > 0) return;
+    const sq = sqAt(e), p = sq && game.get(sq);
+    if (!p || p.color !== 'w') return;
+    drag = { sq, x: e.clientX, y: e.clientY, on: false, el: pieceEls.get(sq), id: e.pointerId };
+  });
+  board.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.on) {
+      if (Math.hypot(dx, dy) < 4) return;
+      drag.on = true; try { board.setPointerCapture(e.pointerId); } catch {}
+      sel = drag.sq; highlights(); ctx.sfx.tap();
+      drag.el.classList.add('drag');
+    }
+    e.preventDefault();
+    const lift = e.pointerType === 'touch' ? -board.clientWidth / 8 * 0.55 : 0;
+    drag.el.style.transform = `translate(${dx}px, ${dy + lift}px) scale(${e.pointerType === 'touch' ? 1.45 : 1.15})`;
+    const over = sqAt({ clientX: e.clientX, clientY: e.clientY + lift });
+    board.querySelectorAll('.sq.hover').forEach((x) => x.classList.remove('hover'));
+    if (over) sqEls[over].classList.add('hover');
+  });
+  const endDrag = (e, cancel) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag; drag = null;
+    if (!d.on) return; // a plain tap: the square's click handler does the rest
+    justDragged = true; setTimeout(() => { justDragged = false; }, 0);
+    board.querySelectorAll('.sq.hover').forEach((x) => x.classList.remove('hover'));
+    const lift = e.pointerType === 'touch' ? -board.clientWidth / 8 * 0.55 : 0;
+    const to = cancel ? null : sqAt({ clientX: e.clientX, clientY: e.clientY + lift });
+    const legal = to && game.moves({ square: d.sq, verbose: true }).find((m) => m.to === to);
+    if (legal) { sel = null; doMove({ from: d.sq, to, promotion: 'q' }, true); return after(); }
+    // snap back
+    d.el.classList.remove('drag');
+    d.el.style.transition = 'transform .15s ease-out'; d.el.style.transform = '';
+    setTimeout(() => { d.el.style.transition = ''; }, 170);
+    if (to && to !== d.sq) { ctx.sfx.bad(); sel = null; }
+    highlights();
+  };
+  board.addEventListener('pointerup', (e) => endDrag(e, false));
+  board.addEventListener('pointercancel', (e) => endDrag(e, true));
   drawPieces(); highlights(); ctx.hint(MSG.you);
   window.__chdbg = () => ({ fen: game.fen(), busy, moves: game.moves({ verbose: true }).map((m) => m.from + m.to) });
   return () => { alive = false; timers.forEach(clearTimeout); };

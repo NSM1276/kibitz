@@ -63,8 +63,24 @@ export default {
       const el = pcs.get(from); if (!el) return;
       pcs.delete(from); pcs.set(to, el);
       const [x, y] = pos(to); el.style.left = x + '%'; el.style.top = y + '%';
+      // the piece lifts a little while it travels
+      try { el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.16)', filter: 'drop-shadow(0 6px 5px #0006)', offset: 0.45 }, { transform: 'scale(1)' }], { duration: 300, easing: 'ease-in-out' }); } catch {}
     }
-    function fade(sq) { const el = pcs.get(sq); if (el) { el.style.opacity = '.25'; } }
+    // a captured piece stays half-visible until the whole move ends (Russian rules), then shrinks away
+    function fade(sq) { const el = pcs.get(sq); if (el) { el.style.opacity = '.3'; el.dataset.dying = '1'; } }
+    function vanish(then) {
+      const dying = [...pcs.values()].filter((el) => el.dataset.dying);
+      dying.forEach((el) => { try { el.animate([{ transform: 'scale(1)', opacity: 0.3 }, { transform: 'scale(.3)', opacity: 0 }], { duration: 220, easing: 'ease-in', fill: 'forwards' }); } catch {} });
+      later(then, dying.length ? 220 : 0);
+    }
+    // crowning: the new king pops and a chime plays
+    function crown(before, m) {
+      const to = m.path.at(-1);
+      if (Math.abs(before[m.from]) !== 1 || Math.abs(b[to]) !== 2) return;
+      const el = pcs.get(to); if (!el) return;
+      try { el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.3)', offset: 0.4 }, { transform: 'scale(1)' }], { duration: 380, easing: 'cubic-bezier(.3,1.5,.5,1)' }); } catch {}
+      ctx.sfx.ok(); ctx.sfx.buzz && ctx.sfx.buzz(25);
+    }
 
     function click(sq) {
       if (turn !== 1 || busy || !alive) return;
@@ -94,9 +110,9 @@ export default {
       sel = sq; ctx.hint(MSG.more); marks();
     }
     function finish(m) {
-      b = apply(b, m); partial = null; sel = null; busy = true; marks();
+      const before = b; b = apply(b, m); partial = null; sel = null; busy = true; marks();
       quiet = m.caps.length ? 0 : quiet + 1;
-      later(() => { draw(); lastMarks(m); if (!checkEnd(-1)) { turn = -1; computer(); } }, 300);
+      later(() => vanish(() => { draw(); crown(before, m); lastMarks(m); if (!checkEnd(-1)) { turn = -1; computer(); } }), 300);
     }
     function lastMarks(m) { sqEls[m.from].classList.add('from'); sqEls[m.path.at(-1)].classList.add('to'); }
     function checkEnd(next) {
@@ -114,13 +130,15 @@ export default {
             slide(at, m.path[i]); if (m.caps[i] != null) { fade(m.caps[i]); ctx.sfx.capture(); } else ctx.sfx.move();
             at = m.path[i]; i++; later(hop, 330);
           } else {
-            b = apply(b, m); quiet = m.caps.length ? 0 : quiet + 1;
-            draw(); turn = 1; busy = false;
-            if (!checkEnd(1)) { const ms = moves(b, 1); ctx.hint(ms[0] && ms[0].caps.length ? MSG.must : MSG.you); marks(); lastMarks(m); }
+            const before = b; b = apply(b, m); quiet = m.caps.length ? 0 : quiet + 1;
+            vanish(() => {
+              draw(); crown(before, m); turn = 1; busy = false;
+              if (!checkEnd(1)) { const ms = moves(b, 1); ctx.hint(ms[0] && ms[0].caps.length ? MSG.must : MSG.you); marks(); lastMarks(m); }
+            });
           }
         };
         hop();
-      }, 380);
+      }, moves(b, -1).length <= 1 ? 250 : 450 + Math.random() * 400);
     }
     draw(); marks(); ctx.hint(MSG.you);
     window.__ckdbg = () => ({ turn, busy, sel, partial, quiet, b: b.join(',') });

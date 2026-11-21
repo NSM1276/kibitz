@@ -180,12 +180,14 @@ canvas.stagecv { width: auto; max-width: 100%; max-height: 60vh; margin: 0 auto;
 .dk-trumpsym.sS, .dk-trumpsym.sC { color: #0c2a1b; } .dk-trumpsym.sH, .dk-trumpsym.sD { color: #c0222b; }
 .dk-table { flex: 1; display: flex; flex-wrap: wrap; gap: 8px 4px; align-content: center; min-height: 110px; }
 .dk-pair { position: relative; width: 58px; height: 98px; }
-.dk-pair .card { position: absolute; left: 0; top: 0; cursor: default; animation: pop .2s ease-out; }
+.dk-pair .card { position: absolute; left: 0; top: 0; cursor: default; }
 .dk-pair .card.cover { left: 4px; top: 18px; transform: rotate(8deg); }
 .dk-btns { display: flex; justify-content: center; gap: 8px; min-height: 44px; }
 .dk-btns .btn { flex: 0 1 180px; }
 .dk-hand { display: flex; justify-content: center; flex-wrap: nowrap; gap: 6px; padding-top: 8px; }
-.dk-hand .card:hover { transform: translateY(-6px); z-index: 2; }
+.dk-hand .card.ok { box-shadow: 0 0 0 2px #f3c74a, 0 4px 10px #0007; }
+@media (hover: hover) { .dk-hand .card:hover { transform: translateY(-6px); z-index: 2; } }
+.dk-hand .card:active { transform: translateY(-10px) scale(1.05); }
 
 /* pool 8-ball + shared phone game frame (pool, backgammon) */
 #app.wide { max-width: 1100px; }
@@ -262,3 +264,31 @@ canvas.gcv { display: block; border-radius: 12px; box-shadow: 0 14px 30px #000a;
 .pgame.fs .pmain { grid-area: main; min-height: 0; }
 .pgame.bg.fs .pside { width: 118px; flex: 0 0 118px; }
 @media (max-width: 600px) { .pgame.bg { margin: 0 -16px; } }
+/* durak: card size follows --cw so phones get bigger cards */
+.durak { --cw: 54px; }
+@media (max-width: 600px) { .durak { --cw: 60px; padding: 10px 8px; } }
+.durak .card:not(.back) { width: var(--cw); height: calc(var(--cw) * 1.48); font-size: calc(var(--cw) / 54 * 16px); }
+.durak .card .r { left: .31em; top: .19em; font-size: 1.125em; }
+.durak .card .s { left: .375em; top: 1.45em; font-size: .94em; }
+.durak .card .big { right: .31em; bottom: .19em; font-size: 1.9em; }
+.durak .dk-hand .card.back, .durak .dk-talon .card.back { width: var(--cw); height: calc(var(--cw) * 1.48); }
+.durak .dk-pair { width: calc(var(--cw) + 4px); height: calc(var(--cw) * 1.48 + 20px); }
+.durak .dk-pair .card.cover { left: 6px; top: 20px; transform: rotate(9deg); }
+.durak .dk-talon { width: calc(var(--cw) * 1.78); height: calc(var(--cw) * 2); }
+.durak .dk-talon .trumpcard { left: calc(var(--cw) * .63); top: calc(var(--cw) * .26); }
+.durak .dk-mid { min-height: calc(var(--cw) * 3.2); }
+.durak .dk-opp { min-height: 64px; }
+
+/* game feel: buttons press in, result panel pops in */
+.btn, .lvchip, .iconbtn, .lang, .pico, .pvar button { transition: transform .15s cubic-bezier(.3,1.6,.5,1), filter .15s; }
+.btn:active, .lvchip:active, .iconbtn:active, .lang:active, .pico:active, .pvar button:active { transform: scale(.94); transition-duration: .08s; }
+.feedback { animation: fbpop .36s cubic-bezier(.3,1.5,.5,1) both; }
+.feedback.bad { animation: fbfade .4s ease-out both; }
+@keyframes fbpop { from { transform: scale(.82); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fbfade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .feedback, .feedback.bad { animation: none; } }
+
+/* chess drag */
+.board.drag-ok { touch-action: none; }
+.board .pc.drag { transition: none !important; z-index: 10; filter: drop-shadow(0 8px 6px #0007); }
+.board .sq.hover { box-shadow: inset 0 0 0 4px #fff9; }

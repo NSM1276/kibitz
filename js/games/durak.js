@@ -1,4 +1,5 @@
 // Durak (podkidnoy, 36 cards, you vs computer).
+import { flipRender } from './flip.js';
 const SUITS = ['S', 'C', 'D', 'H'];
 const RANKS = ['6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 const SYM = { C: '♣', S: '♠', H: '♥', D: '♦' };
@@ -44,7 +45,7 @@ export default {
     const sortHand = (h) => h.sort((a, b) => (a[0] === T) - (b[0] === T) || SUITS.indexOf(a[0]) - SUITS.indexOf(b[0]) || rv(a) - rv(b));
     function draw(who) { while (hands[who].length < 6 && talon.length) hands[who].push(talon.pop()); }
     draw('me'); draw('cpu');
-    setTimeout(() => ctx.sfx.shuffle(), 150);
+    ctx.sfx.shuffle();
     // lowest trump starts
     const lowT = (h) => Math.min(...h.filter((c) => c[0] === T).map(rv), 99);
     attacker = lowT(hands.cpu) < lowT(hands.me) ? 'cpu' : 'me';
@@ -55,18 +56,28 @@ export default {
     const oppEl = root.querySelector('.dk-opp'), talonEl = root.querySelector('.dk-talon'), tableEl = root.querySelector('.dk-table'), handEl = root.querySelector('.dk-hand'), btnEl = root.querySelector('.dk-btns');
 
     function cardEl(c, tag = 'div') {
-      const el = document.createElement(tag); el.className = 'card s' + c[0];
+      const el = document.createElement(tag); el.className = 'card s' + c[0]; el.dataset.k = c;
       const r = RN[L][c[1]] || c[1];
       el.innerHTML = `<span class="r">${r}</span><span class="s">${SYM[c[0]]}</span><span class="big">${SYM[c[0]]}</span>`;
       return el;
     }
-    const back = () => { const el = document.createElement('div'); el.className = 'card back'; return el; };
+    const back = (k) => { const el = document.createElement('div'); el.className = 'card back'; if (k) el.dataset.k = k; return el; };
     const rankOnTable = () => new Set(table.flatMap((p) => [p.a, p.d].filter(Boolean).map((c) => c[1])));
     const unbeaten = () => table.filter((p) => !p.d);
     const defender = () => (attacker === 'me' ? 'cpu' : 'me');
 
+    // every change re-renders once; cards glide from where they were (FLIP), new ones fly in from the deck,
+    // beaten ones sweep off to the side
     function render() {
-      oppEl.innerHTML = ''; hands.cpu.forEach(() => oppEl.append(back()));
+      flipRender(root, build, {
+        origin: () => talonEl.querySelector('.pile') || talonEl.querySelector('.trumpcard') || talonEl,
+        discard: () => { const r = root.getBoundingClientRect(); return { x: r.right + 30, y: r.top + r.height * 0.4 }; },
+        onBorn: (i) => { setTimeout(() => alive && ctx.sfx.slide(), i * 70); },
+        order: (el) => { const box = el.parentElement, i = [...box.children].indexOf(el); return box === oppEl ? 2 * i : box === handEl ? 2 * i + 1 : 100 + i; },
+      });
+    }
+    function build() {
+      oppEl.innerHTML = ''; hands.cpu.forEach((c) => oppEl.append(back(c)));
       talonEl.innerHTML = '';
       if (talon.length) {
         const tc = cardEl(trumpCard); tc.classList.add('trumpcard'); talonEl.append(tc);
@@ -78,7 +89,7 @@ export default {
       handEl.innerHTML = '';
       sortHand(hands.me).forEach((c) => {
         const el = cardEl(c, 'button');
-        if (!busy && !playable(c)) el.classList.add('illegal');
+        if (!busy && !playable(c)) el.classList.add('illegal'); else if (!busy) el.classList.add('ok');
         el.onclick = () => tapCard(c); handEl.append(el);
       });
       fit();
@@ -90,7 +101,7 @@ export default {
     }
     const t = ctx.t;
     function btn(label, fn) { const b = document.createElement('button'); b.className = 'btn'; b.textContent = t(label); b.onclick = fn; return b; }
-    function fit() { const n = handEl.children.length, w = handEl.clientWidth - 8, need = n * 54 + (n - 1) * 6; const ov = need > w && n > 1 ? Math.ceil((need - w) / (n - 1)) + 6 : 0; [...handEl.children].forEach((c, i) => { c.style.marginLeft = i && ov ? `-${ov}px` : ''; }); }
+    function fit() { const n = handEl.children.length, w = handEl.clientWidth - 8, cw = handEl.firstElementChild?.offsetWidth || 54, need = n * cw + (n - 1) * 6; const ov = need > w && n > 1 ? Math.ceil((need - w) / (n - 1)) + 6 : 0; [...handEl.children].forEach((c, i) => { c.style.marginLeft = i && ov ? `-${ov}px` : ''; }); }
     window.addEventListener('resize', fit);
 
     function canAdd() { const defCards = hands[defender()].length; return table.length < limit && unbeaten().length < defCards + 0 && (table.length === 0 || true); }
@@ -109,7 +120,7 @@ export default {
         if (table.length && !(table.length < limit && unbeaten().length < hands.cpu.length)) return ctx.toast(t(MSG.full));
         hands.me.splice(hands.me.indexOf(c), 1); table.push({ a: c, d: null }); ctx.sfx.card();
         if (taking) { render(); ctx.hint(MSG.addMore); return; }
-        render(); busy = true; render();
+        busy = true; render();
         later(cpuDefend, 650);
       } else {
         if (taking) return;
@@ -181,8 +192,9 @@ export default {
       return true;
     }
     window.__dkdbg = () => ({ busy, attacker, taking, table: table.length, me: hands.me.length, cpu: hands.cpu.length, talon: talon.length });
+    if (attacker === 'cpu') busy = true;
     render();
-    if (attacker === 'cpu') { busy = true; render(); later(cpuAttack, 700); } else ctx.hint(MSG.attack);
+    if (attacker === 'cpu') later(cpuAttack, 1300); else ctx.hint(MSG.attack);
     return () => { alive = false; timers.forEach(clearTimeout); window.removeEventListener('resize', fit); };
   },
 };

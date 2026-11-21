@@ -145,7 +145,7 @@ export function playPool(stage, ctx) {
   const release = () => {
     if (!pulling) return; pulling = null;
     const p = power; power = 0; showPower();
-    if (p > 0.04 && myTurn()) shoot({ angle, speed: speedOf(p * 100), spin }); else draw();
+    if (p > 0.04 && myTurn()) shoot({ angle, speed: speedOf(p * 100), spin, pull: 4 + p * 70 }); else draw();
   };
   powEl.addEventListener('pointerup', release);
   powEl.addEventListener('pointercancel', () => { pulling = null; power = 0; showPower(); draw(); });
@@ -219,22 +219,43 @@ export function playPool(stage, ctx) {
   }
 
   // ---------- dynamic drawing ----------
-  function ballAt(x, y, n, alpha = 1) {
-    g.save(); g.globalAlpha = alpha; g.translate(M + x, M + y); if (view.rot) g.rotate(-Math.PI / 2);
+  // rolling: each ball keeps a roll phase (distance / radius) and the direction it last rolled in
+  const roll = new Map();
+  function rollTo(n, x, y) {
+    const r = roll.get(n);
+    if (!r) { roll.set(n, { x, y, ph: 0, ux: 1, uy: 0 }); return; }
+    const dx = x - r.x, dy = y - r.y, d = Math.hypot(dx, dy);
+    if (d > 0.01) { r.ux = dx / d; r.uy = dy / d; r.ph += d / R; }
+    r.x = x; r.y = y;
+  }
+  function ballAt(x, y, n, alpha = 1, scale = 1, dark = 0) {
+    g.save(); g.globalAlpha = alpha; g.translate(M + x, M + y); if (scale !== 1) g.scale(scale, scale);
+    g.save(); if (view.rot) g.rotate(-Math.PI / 2);
     g.fillStyle = 'rgba(0,0,0,.38)'; g.beginPath(); g.ellipse(2.4, 3.4, R * 1.02, R * 0.9, 0, 0, 7); g.fill();
-    const base = color(n);
+    g.restore();
+    const base = color(n), rs = roll.get(n) || { ph: 0, ux: 1, uy: 0 };
+    // markings slide across the ball and foreshorten as it turns (numbers sit on two opposite sides)
+    const sn = Math.sin(rs.ph), cs = Math.cos(rs.ph), ang = Math.atan2(rs.uy, rs.ux), fore = 0.5 + 0.5 * Math.abs(cs); // never fully edge-on, so stripes and numbers stay readable
+    g.save(); g.beginPath(); g.arc(0, 0, R, 0, 7); g.clip();
     if (n > 8) {
-      g.fillStyle = '#f7f4ea'; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill();
-      g.save(); g.beginPath(); g.arc(0, 0, R, 0, 7); g.clip(); g.fillStyle = base; g.fillRect(-R, -R * 0.56, 2 * R, R * 1.12); g.restore();
-    } else { g.fillStyle = base; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill(); }
+      g.fillStyle = '#f7f4ea'; g.fillRect(-R, -R, 2 * R, 2 * R);
+      // the coloured band turns with the ball
+      g.save(); g.rotate(ang); g.translate(sn * R * 0.45, 0); g.scale(fore, 1); g.fillStyle = base; g.fillRect(-R * 0.56, -R * 1.2, R * 1.12, R * 2.4); g.restore();
+    } else { g.fillStyle = base; g.fillRect(-R, -R, 2 * R, 2 * R); }
     if (n) {
+      g.save(); g.rotate(ang); g.translate(sn * R * 0.42, 0); g.scale(fore, 1); g.rotate(-ang);
+      if (view.rot) g.rotate(-Math.PI / 2);
       g.fillStyle = '#fbf8ee'; g.beginPath(); g.arc(0, 0, R * 0.5, 0, 7); g.fill();
       g.fillStyle = '#151515'; g.font = `bold ${n > 9 ? R * 0.62 : R * 0.74}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n, 0, 0.6);
+      g.restore();
     }
+    g.restore();
+    if (view.rot) g.rotate(-Math.PI / 2);
     const sh = g.createRadialGradient(-R * 0.38, -R * 0.42, R * 0.05, 0, 0, R * 1.05);
     sh.addColorStop(0, 'rgba(255,255,255,.55)'); sh.addColorStop(0.28, 'rgba(255,255,255,.07)'); sh.addColorStop(0.72, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.45)');
     g.fillStyle = sh; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill();
     g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.ellipse(-R * 0.4, -R * 0.46, R * 0.2, R * 0.13, -0.6, 0, 7); g.fill();
+    if (dark) { g.fillStyle = `rgba(0,0,0,${dark})`; g.beginPath(); g.arc(0, 0, R, 0, 7); g.fill(); }
     g.restore();
   }
   // tapered cue: tip, white ferrule, maple shaft, dark butt with a brass ring
@@ -298,12 +319,14 @@ export function playPool(stage, ctx) {
     const bad = (own && groupOf(fc.ball.n) !== own && !(fc.ball.n === 8 && cleared(turn))) || (!own && fc.ball.n === 8);
     if (bad) ring(M + fc.ball.x, M + fc.ball.y, R + 4, '#ff4a3a', 3);
   }
-  function draw(pos) {
+  function draw(pos, extra) {
     if (!alive || !bg.width) return;
     g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(bg, 0, 0); view.apply(g);
     const list = pos || balls;
     if (!pos && myTurn()) guide();
+    if (extra && extra.sink) for (const s of extra.sink) ballAt(s.x, s.y, s.n, s.a, s.k, s.d);
     for (const b of list) if (b) ballAt(b.x, b.y, b.n);
+    if (extra && extra.cue) { g.save(); g.globalAlpha = extra.cue.alpha; cueStick(extra.cue.c, extra.cue.a, extra.cue.pull); g.restore(); }
     if (!pos && phase === 'aim') {
       if (turn === 'me') {
         if (inHand) { const c = cue(); const k = (performance.now() / 600) % 1; ring(M + c.x, M + c.y, R + 6 + k * 4, '#ffd45a', 2.6); }
@@ -331,18 +354,44 @@ export function playPool(stage, ctx) {
     phase = 'anim'; renderInfo();
     const res = simulate(balls, shot, true);
     const ids = balls.map((b) => b.n);
+    // the cue snaps forward from its pulled-back spot (~70 ms), hits, then fades while the balls run
+    const STRIKE = 0.07, c0 = { ...cue() }, pull0 = shot.pull ?? 30;
     ctx.sfx.cue(Math.min(1, (shot.speed - 120) / 1500));
-    const t0 = performance.now(); let evI = 0; let lastRail = 0;
+    const tStart = performance.now(), t0 = tStart + STRIKE * 1000; let evI = 0; let lastRail = 0;
     const evs = res.events.slice().sort((a, b) => a.t - b.t);
+    const sinking = []; // potted balls glide into the pocket, shrink and darken
+    let prev = res.frames[0];
     const stepF = (tm) => {
       if (!alive) return;
-      const t = (tm - t0) / 1000, fi = Math.min(res.frames.length - 1, Math.floor(t * 60));
+      const t = (tm - t0) / 1000, fi = Math.max(0, Math.min(res.frames.length - 1, Math.floor(t * 60)));
       while (evI < evs.length && evs[evI].t <= t) {
         const e = evs[evI++];
-        if (e.type === 'hit' && e.v > 25) ctx.sfx.ball(e.v); else if (e.type === 'pot') ctx.sfx.pocket(); else if (e.type === 'rail' && e.v > 60 && e.t - lastRail > 0.05) { lastRail = e.t; ctx.sfx.rail(e.v); }
+        if (e.type === 'hit' && e.v > 25) ctx.sfx.ball(e.v);
+        else if (e.type === 'pot') {
+          later(() => ctx.sfx.pocket(), 110); if (ctx.sfx.buzz) ctx.sfx.buzz(20);
+          const last = prev[ids.indexOf(e.n)];
+          if (last) {
+            let best = POCKETS[0];
+            for (const pk of POCKETS) if (Math.hypot(pk[0] - last[0], pk[1] - last[1]) < Math.hypot(best[0] - last[0], best[1] - last[1])) best = pk;
+            sinking.push({ n: e.n, x0: last[0], y0: last[1], px: best[0], py: best[1], t: e.t });
+          }
+        } else if (e.type === 'rail' && e.v > 60 && e.t - lastRail > 0.05) { lastRail = e.t; ctx.sfx.rail(e.v); }
       }
-      draw(res.frames[fi].map((p, i) => (p ? { x: p[0], y: p[1], n: ids[i] } : null)));
-      if (fi < res.frames.length - 1) frame(stepF); else later(() => afterShot(res), 150);
+      const cur = res.frames[fi];
+      cur.forEach((p, i) => { if (p) rollTo(ids[i], p[0], p[1]); });
+      prev = cur.map((p, i) => p || prev[i]);
+      const sink = sinking.map((s) => {
+        const k = Math.min(1, (t - s.t) / 0.2), e = 1 - (1 - k) * (1 - k);
+        return { n: s.n, x: s.x0 + (s.px - s.x0) * e, y: s.y0 + (s.py - s.y0) * e, k: 1 - 0.35 * e, a: 1 - k, d: 0.5 * e, done: k >= 1 };
+      }).filter((s) => !s.done);
+      const ts = (tm - tStart) / 1000;
+      let cueFx = null;
+      if (ts < STRIKE + 0.22) {
+        const k = Math.min(1, ts / STRIKE);
+        cueFx = { c: c0, a: shot.angle, pull: ts < STRIKE ? pull0 * (1 - k * k) - 2 : -2, alpha: ts < STRIKE ? 1 : Math.max(0, 1 - (ts - STRIKE) / 0.22) };
+      }
+      draw(cur.map((p, i) => (p ? { x: p[0], y: p[1], n: ids[i] } : null)), { sink, cue: cueFx });
+      if (fi < res.frames.length - 1 || sink.length || cueFx) frame(stepF); else later(() => afterShot(res), 150);
     };
     frame(stepF);
   }
@@ -449,9 +498,9 @@ export function playPool(stage, ctx) {
     const aimAnim = (tm) => {
       if (!alive) return;
       const k = Math.min(1, (tm - t0) / 700);
-      cpuAim = { a: a0 + (shot.angle - a0) * (1 - Math.pow(1 - k, 3)), pull: 10 + Math.sin(k * Math.PI) * 18 };
+      cpuAim = { a: a0 + (shot.angle - a0) * (1 - Math.pow(1 - k, 3)), pull: 8 + k * k * (12 + Math.min(1, (shot.speed - 120) / 1500) * 50) };
       draw();
-      if (k < 1) frame(aimAnim); else { cpuAim = null; shoot(shot); }
+      if (k < 1) frame(aimAnim); else { const pull = cpuAim.pull; cpuAim = null; shoot({ ...shot, pull }); }
     };
     frame(aimAnim);
   }

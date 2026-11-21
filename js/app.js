@@ -83,13 +83,18 @@ function play(group, vol = 0.7, rate = 1, when = 0) {
   } catch { /* ignore */ }
   return true;
 }
+// short vibration on Android (iPhone Safari has no vibration API); silent when muted
+const buzz = (pat) => { if (muted) return; try { navigator.vibrate && navigator.vibrate(pat); } catch { /* not allowed yet */ } };
 const sfx = {
+  buzz,
+  check: () => { play('woodh', 0.7, 1.1); play('ding', 0.22, 1.5, 0.04); },
+  lose: () => { play('ding', 0.3, 0.6); play('woodm', 0.4, 0.7, 0.1); },
   tap: () => play('wood', 0.22, 1.6) || tone(660, 0.05, 'triangle', 0.05),
   move: () => play('wood', 0.8) || tone(120, 0.08, 'sine', 0.12),
-  capture: () => { if (!play('woodm', 0.9)) tone(90, 0.16, 'sine', 0.16); play('woodh', 0.45, 1, 0.05); },
+  capture: () => { if (!play('woodm', 0.9)) tone(90, 0.16, 'sine', 0.16); play('woodh', 0.45, 1, 0.05); buzz(20); },
   ok: () => play('ding', 0.45) || tone(990, 0.2, 'triangle', 0.1),
-  bad: () => { if (!play('woodh', 0.6, 0.8)) tone(150, 0.25, 'sawtooth', 0.05); play('woodh', 0.45, 0.7, 0.13); },
-  win: () => { play('ding', 0.5); play('chips', 0.6, 1, 0.12); },
+  bad: () => { buzz([30, 40, 30]); if (!play('woodh', 0.6, 0.8)) tone(150, 0.25, 'sawtooth', 0.05); play('woodh', 0.45, 0.7, 0.13); },
+  win: () => { play('ding', 0.5); play('chips', 0.6, 1, 0.12); buzz([40, 60, 40, 60, 80]); },
   // pool: strength 0..1
   cue: (p = 0.6) => play('cue', 0.25 + p * 0.75, 0.9 + p * 0.2),
   ball: (v = 300) => play('ball', Math.min(1, 0.12 + v / 900), 0.72 + Math.min(0.15, v / 6000)),
@@ -207,7 +212,8 @@ function playScreen(g) {
       hint: (msg) => { hint.textContent = msg ? t(msg) : ''; },
       over: ({ result, text }) => {
         const ok = result === 'win';
-        ok ? sfx.win() : result === 'lose' ? sfx.bad() : sfx.ok();
+        ok ? sfx.win() : result === 'lose' ? sfx.lose() : sfx.ok();
+        if (ok) confetti();
         fb.innerHTML = '';
         fb.append(h('div', { class: 'feedback ' + (ok ? 'ok' : result === 'lose' ? 'bad' : '') },
           h('div', { class: 'fh' }, t(UI[result])), text ? h('div', { class: 'fx' }, t(text)) : null,
@@ -219,6 +225,36 @@ function playScreen(g) {
   }
   start();
   cleanup = () => { if (stop) stop(); };
+}
+
+// a short burst of confetti over the page when a game is won (~1.4 s, skipped for reduced motion)
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas'), dpr = Math.min(2, devicePixelRatio || 1);
+  const W = innerWidth, H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:90';
+  document.body.append(cv);
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const cols = ['#f3c74a', '#e4572e', '#2f9e6b', '#4a90d9', '#fdfaf1', '#c0222b'];
+  const ps = Array.from({ length: 110 }, (_, i) => {
+    const side = i % 2, a = (side ? -1 : 1) * (0.35 + Math.random() * 0.55);
+    const v = 9 + Math.random() * 9;
+    return { x: side ? W + 10 : -10, y: H * (0.55 + Math.random() * 0.25), vx: Math.cos(a) * v * (side ? 1 : 1), vy: -Math.abs(Math.sin(a)) * v - 6,
+      r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4, w: 6 + Math.random() * 6, h: 4 + Math.random() * 5, c: cols[i % cols.length] };
+  });
+  ps.forEach((p, i) => { if (i % 2) p.vx = -Math.abs(p.vx); else p.vx = Math.abs(p.vx); });
+  const t0 = performance.now();
+  (function frame(now) {
+    const t = (now - t0) / 1000;
+    g.clearRect(0, 0, W, H);
+    g.globalAlpha = t < 1.1 ? 1 : Math.max(0, 1 - (t - 1.1) / 0.5);
+    for (const p of ps) {
+      p.vy += 0.42; p.vx *= 0.985; p.vy *= 0.985; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.scale(1, Math.cos(p.r * 2.3)); g.fillStyle = p.c; g.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); g.restore();
+    }
+    if (t < 1.6) requestAnimationFrame(frame); else cv.remove();
+  })(t0);
 }
 
 function go(path) { location.hash = '#/' + path; }
