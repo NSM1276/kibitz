@@ -71,14 +71,22 @@ export function playBackgammon(stage, ctx) {
     const fs = (phoneLandscape() || document.fullscreenElement === wrap) && phase !== 'over';
     wrap.classList.toggle('fs', fs);
     document.body.style.overflow = fs ? 'hidden' : '';
-    const top = $('.ptop').offsetHeight + hintEl.offsetHeight + $('.pvar').offsetHeight + 12;
-    const W0 = wrap.clientWidth, H0 = (fs ? wrap.clientHeight : window.innerHeight - 16) - top;
-    const opts = [
-      { rot: false, side: false, s: view.fit(false, W0, H0 - 62) },
-      { rot: false, side: true, s: view.fit(false, W0 - 128, H0) },
-      { rot: true, side: false, s: view.fit(true, W0, H0 - 62) },
-    ];
-    const best = fs ? opts[1] : opts.reduce((a, b) => (b.s > a.s * 1.04 ? b : a));
+    // the board always lies the normal way. Sideways phone: players + hint in a left column, buttons on the right,
+    // so the board gets the whole height of the screen.
+    let best;
+    if (fs) {
+      wrap.classList.add('side');
+      const lw = $('.ptop').offsetWidth || 150;
+      best = { rot: false, side: true, s: view.fit(false, wrap.clientWidth - lw - 128 - 20, wrap.clientHeight - 10) };
+    } else {
+      const top = $('.ptop').offsetHeight + hintEl.offsetHeight + $('.pvar').offsetHeight + 12;
+      const W0 = wrap.clientWidth, H0 = window.innerHeight - 16 - top;
+      const opts = [
+        { rot: false, side: false, s: view.fit(false, W0, H0 - 62) },
+        { rot: false, side: true, s: view.fit(false, W0 - 128, H0) },
+      ];
+      best = opts.reduce((x, y) => (y.s > x.s * 1.04 ? y : x));
+    }
     wrap.classList.toggle('side', best.side);
     view.size(best.rot, best.s);
     paintBoard(); draw();

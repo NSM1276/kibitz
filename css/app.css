@@ -253,3 +253,12 @@ canvas.gcv { display: block; border-radius: 12px; box-shadow: 0 14px 30px #000a;
 .pvar button { flex: 0 1 170px; padding: 8px 10px; border-radius: 4px; border: 1px solid #7a5520; cursor: pointer; font: 600 14px var(--serif); color: var(--ink); background: var(--paper); box-shadow: 0 2px 3px #0005; opacity: .75; }
 .pvar button.on { opacity: 1; color: #2a1a08; background: linear-gradient(180deg, var(--brass2), var(--brass) 60%, #93682a); }
 .pgame.fs .pvar { display: none; }
+/* backgammon / nardy, phone sideways: players and hint on the left, board fills the height */
+.pgame.fs { display: grid; grid-template-columns: 150px 1fr; grid-template-rows: auto 1fr; grid-template-areas: "top main" "hint main"; column-gap: 8px; }
+.pgame.fs .ptop { grid-area: top; flex-direction: column; width: 150px; }
+.pgame.fs .ptop .pico { min-height: 34px; width: 100%; }
+.pgame.fs .ptop .pl { flex: 0 0 auto; }
+.pgame.fs .phint { grid-area: hint; white-space: normal; text-align: left; font-size: 13px; overflow: visible; }
+.pgame.fs .pmain { grid-area: main; min-height: 0; }
+.pgame.bg.fs .pside { width: 118px; flex: 0 0 118px; }
+@media (max-width: 600px) { .pgame.bg { margin: 0 -16px; } }

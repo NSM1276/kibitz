@@ -85,10 +85,16 @@ export function playPool(stage, ctx) {
     const fs = (phoneLandscape() || document.fullscreenElement === wrap) && phase !== 'over';
     wrap.classList.toggle('fs', fs);
     document.body.style.overflow = fs ? 'hidden' : '';
-    const top = $('.ptop').offsetHeight + hintEl.offsetHeight + 8;
-    const W0 = wrap.clientWidth, H0 = (fs ? wrap.clientHeight : window.innerHeight - 16) - top;
-    const sUp = view.fit(false, W0, H0 - 70), sSide = view.fit(true, W0 - 108, H0);
-    const side = fs || sSide > sUp * 1.05;
+    let sUp = 0, sSide, side;
+    if (fs) { // phone sideways: players + hint in a left column, so the table gets the full height
+      const lw = $('.ptop').offsetWidth || 150;
+      sSide = view.fit(true, wrap.clientWidth - lw - 108 - 20, wrap.clientHeight - 10); side = true;
+    } else {
+      const top = $('.ptop').offsetHeight + hintEl.offsetHeight + 8;
+      const W0 = wrap.clientWidth, H0 = window.innerHeight - 16 - top;
+      sUp = view.fit(false, W0, H0 - 70); sSide = view.fit(true, W0 - 108, H0);
+      side = sSide > sUp * 1.05;
+    }
     wrap.classList.toggle('side', side);
     view.size(side, side ? sSide : sUp);
     paintTable(); draw();
