@@ -183,7 +183,7 @@ function creditsScreen() {
     h('div', { class: 'prompt' }, h('div', { class: 'pt', style: 'font-weight:500;font-size:14px' },
       'Chess pieces: "cburnett" set by Colin M.L. Burnett, CC BY-SA 3.0. ',
       'Chess rules: chess.js by Jeff Hlywa, BSD-2-Clause. ',
-      'Sounds: Casino Audio, Impact Sounds, Interface Sounds by Kenney (kenney.nl), CC0. ',
+      'Sounds: Casino Audio, Impact Sounds, Interface Sounds by Kenney (kenney.nl), CC0. Font: Nunito by Vernon Adams (SIL Open Font License). ',
       'Everything else: original.')),
   );
 }

@@ -12,7 +12,7 @@ const COL = { 1: '#f5c400', 2: '#1747c9', 3: '#d8232a', 4: '#5b2a9e', 5: '#f07a1
 const color = (n) => (n === 0 ? '#f7f4ea' : COL[n > 8 ? n - 8 : n]);
 const groupOf = (n) => (n >= 1 && n <= 7 ? 'solid' : n >= 9 ? 'stripe' : null);
 const MSG = {
-  break: { en: 'Your break! Drag on the table to aim, then pull the cue bar and let go.', de: 'Dein Anstoß! Auf dem Tisch ziehen zum Zielen, dann den Queue-Balken ziehen und loslassen.' },
+  break: { en: 'Your break! Aim on the table, pull the bar, let go.', de: 'Dein Anstoß! Zielen, Balken ziehen, loslassen.' },
   aim: { en: 'Your shot. Aim on the table, pull the bar and let go.', de: 'Du bist dran. Zielen, Balken ziehen, loslassen.' },
   inHand: { en: 'Ball in hand: move the white ball, then aim.', de: 'Freie Lage: Schieb die Weiße, dann ziele.' },
   cpu: { en: 'Computer is playing…', de: 'Der Computer spielt…' },
