@@ -27,7 +27,7 @@ export default {
   tagline: { en: 'The best first move for every roll', de: 'Der beste erste Zug für jeden Wurf' },
   tasks,
   play: playBackgammon,
-  playTitle: { en: 'Backgammon vs computer', de: 'Backgammon gegen Computer' },
+  playTitle: { en: 'Nardy & Backgammon', de: 'Narde & Backgammon' },
   mount(stage, task, ctx) {
     const cv = document.createElement('canvas'); cv.className = 'stagecv';
     const dpr = Math.min(2, window.devicePixelRatio || 1);

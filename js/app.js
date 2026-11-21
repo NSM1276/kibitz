@@ -56,7 +56,7 @@ function tone(f, d, type = 'sine', v = 0.12, when = 0) {
 const range = (p, a, b) => Array.from({ length: b - a + 1 }, (_, i) => p + (a + i));
 const SOUNDS = {
   wood: range('wood', 0, 4), woodm: range('woodm', 0, 2), woodh: range('woodh', 0, 2), rail: range('rail', 0, 2), pocket: range('pocket', 0, 2),
-  cue: range('cue', 0, 2), ball: range('ball', 1, 4), checker: range('checker', 1, 3), dice: range('dice', 1, 3), slide: range('slide', 1, 3),
+  cue: range('cue', 0, 2), ball: range('ball', 1, 4), checker: range('checker', 1, 3), dice: range('dice', 1, 3), die: range('die', 1, 4), slide: range('slide', 1, 3),
   card: range('card', 1, 4), shuffle: ['shuffle'], fan: ['fan'], chips: ['chips'], shake: ['shake'], ding: ['ding'],
 };
 const buf = {};
@@ -99,6 +99,8 @@ const sfx = {
   // backgammon, cards
   checker: () => play('checker', 0.75, 0.8) || play('wood', 0.8),
   dice: () => play('dice', 0.85),
+  die: (v = 0.8) => play('die', v),
+  diceTick: (v = 0.3) => play('checker', v, 1.7),
   shake: () => play('shake', 0.6),
   card: () => play('card', 0.7),
   slide: () => play('slide', 0.6),

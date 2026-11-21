@@ -249,3 +249,7 @@ canvas.gcv { display: block; border-radius: 12px; box-shadow: 0 14px 30px #000a;
 .ptop .pl .cki.w { background: radial-gradient(circle at 35% 30%, #fff, #d8cfb8); }
 .ptop .pl .cki.r { background: radial-gradient(circle at 35% 30%, #d65a40, #6e1c10); }
 .lang.snd { font-size: 16px; padding: 0 6px; }
+.pvar { display: flex; gap: 6px; justify-content: center; }
+.pvar button { flex: 0 1 170px; padding: 8px 10px; border-radius: 4px; border: 1px solid #7a5520; cursor: pointer; font: 600 14px var(--serif); color: var(--ink); background: var(--paper); box-shadow: 0 2px 3px #0005; opacity: .75; }
+.pvar button.on { opacity: 1; color: #2a1a08; background: linear-gradient(180deg, var(--brass2), var(--brass) 60%, #93682a); }
+.pgame.fs .pvar { display: none; }
